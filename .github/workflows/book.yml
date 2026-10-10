@@ -1,0 +1,36 @@
+# Set pipeline name.
+name: Book
+
+# Build and publish the book whenever a version tag is pushed, e.g. v1.2.3. The book shares the
+# repository's version namespace, so every release of the course is also an edition of the book.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+# Creating a release needs write access to the repository's contents.
+permissions:
+  contents: write
+
+# Define pipeline jobs.
+jobs:
+  # Build the PDF with the tag on its title page, and attach it to a release named after the tag.
+  release:
+    name: Build and release the book
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install LuaLaTeX and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make texlive-luatex texlive-latex-extra fonts-texgyre \
+                                  fonts-texgyre-math fonts-dejavu-core
+      - name: Build
+        run: make -C book VERSION="${{ github.ref_name }}"
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" book/zephyr-rtos.pdf \
+            --title "Zephyr RTOS, ${{ github.ref_name }}" \
+            --notes "The course typeset as a book, built from ${{ github.sha }}."
