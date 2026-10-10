@@ -1,0 +1,8 @@
+# Store and check out every text file with LF line endings, on every platform, whatever a
+# contributor's core.autocrlf says. Git decides what is text; the entries below only settle the
+# files it must never convert.
+* text=auto eol=lf
+
+# Binary files.
+*.png binary
+*.pdf binary
