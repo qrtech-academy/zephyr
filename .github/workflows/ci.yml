@@ -1,0 +1,51 @@
+# Set pipeline name.
+name: CI
+
+# Set pipeline triggers.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Define pipeline jobs.
+jobs:
+  # Build and run every lecture example on native_sim, run on latest Ubuntu runner.
+  examples:
+    name: Build and run the lecture examples
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up the workspace
+        run: make setup
+      - name: Build and run
+        run: make examples
+
+  # Check code formatting, run on latest Ubuntu runner.
+  format-check:
+    name: Check formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: Check formatting
+        run: make format-check
+
+  # Run every lecture's test suite twice: against the reference solutions published so far, where
+  # every test must pass and unpublished sets are reported as SKIP, and against the empty workspace
+  # a fresh clone has, where every exercise set must be reported as SKIP.
+  test:
+    name: Run the test suites
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up the workspace
+        run: make setup
+      - name: Test the reference solutions
+        run: make test SOLUTIONS=1
+      - name: Test an empty workspace
+        run: make test
