@@ -1,0 +1,32 @@
+% Zephyr RTOS - the book.
+%
+% Built with LuaLaTeX; see the Makefile. The design is in zephyrbook.sty, the front matter in
+% front/, each chapter in chapters/NN/, one file per section, mirroring the appendices of the
+% lecture it is typeset from, and the back matter in back/: the two written papers from exam/. The
+% solutions to the exercises are not printed; the chapters point to them in the repository.
+\documentclass[10pt, twoside, openright]{book}
+\usepackage{zephyrbook}
+
+\begin{document}
+
+\frontmatter
+\input{front/title}
+\tableofcontents
+\input{front/preface}
+
+\mainmatter
+\input{chapters/01/chapter}
+\input{chapters/02/chapter}
+\input{chapters/03/chapter}
+\input{chapters/04/chapter}
+\input{chapters/05/chapter}
+\input{chapters/06/chapter}
+
+\appendix
+\input{back/exam/about}
+\input{back/exam/paper_a}
+\input{back/exam/paper_b}
+\input{back/exam/answers_a}
+\input{back/exam/answers_b}
+
+\end{document}

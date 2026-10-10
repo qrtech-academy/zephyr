@@ -1,0 +1,196 @@
+% Preface: the README's About the Course, Why native_sim, During the Course and Learning Outcomes
+% sections, the course plan from info/README.md, and L01's prerequisites, as the front matter of a
+% book.
+
+\chapter{Preface}
+\markboth{Preface}{Preface}
+
+This book is for embedded C developers who want to build firmware with Zephyr. Every program in it
+is built and run on Linux, on Zephyr's \code{native_sim} board, so no hardware is needed: not a
+development board, not a debug probe, not a single wire.
+
+\textbf{The hard part of Zephyr is not the kernel.} An engineer who has used FreeRTOS, or written a
+scheduler, already knows what a thread, a mutex and a message queue are. What stops people is
+everything around them: a workspace that west manages, a build that is CMake plus Kconfig plus
+devicetree, and a driver model held together by macros. When Zephyr goes wrong, it is rarely
+\code{k_thread_create()} at fault. It is \code{undefined reference to __device_dts_ord_42}, or a
+build aborted by a Kconfig warning, or a misspelled \code{CONFIG_} macro that C quietly treats as
+off.
+
+So this book spends its first two chapters on the build and on devicetree, teaches the kernel as
+\emph{the Zephyr way to do what you already know}, and finishes by writing a driver for a sensor
+that does not exist, then testing and debugging it. Along the way it covers:
+\begin{itemize}
+  \item The west workspace, the manifest, and pinning a Zephyr release.
+  \item The build: CMake, \code{prj.conf}, Kconfig, and what to do when the build rejects an
+    option.
+  \item Logging.
+  \item Devicetree: nodes, properties, bindings, overlays, and the macros that read them at
+    compile time.
+  \item Getting devices from the devicetree, and GPIO through Zephyr's emulated GPIO controller.
+  \item Threads, priorities, cooperative and preemptive scheduling, and time.
+  \item Interrupt context, and deferring work out of it with work queues.
+  \item Semaphores, mutexes with priority inheritance, message queues, events and polling.
+  \item Application architecture with zbus and the State Machine Framework.
+  \item The device driver model: API structs, instances, init levels and bindings.
+  \item Emulators, which stand in for hardware in drivers and tests.
+  \item Testing with ztest and Twister.
+  \item The shell, settings stored on a simulated flash, and networking through host sockets.
+  \item Debugging on the host: GDB, sanitizers, fatal error handling and coverage.
+\end{itemize}
+
+\section*{Why native\_sim}
+\code{native_sim} compiles Zephyr, kernel and application together, into an ordinary Linux
+executable. There is no instruction set simulator: your code runs natively on the host CPU, and the
+hardware around it, a timer, an interrupt controller, a GPIO controller, an I2C bus, a flash chip,
+is simulated. The book uses it for three reasons.
+
+\textbf{Everything builds and runs on a laptop.} No boards to hand out, no probes, no drivers for a
+USB debugger in WSL. A build takes seconds and a run takes less.
+
+\textbf{It is deterministic.} Time on \code{native_sim} is simulated. A program that prints the
+uptime prints the same numbers on every run and on every machine, which is what lets the exercises
+compare your output with the expected output line by line.
+
+\textbf{The host's tools work on it.} GDB, AddressSanitizer, UndefinedBehaviorSanitizer, gcov and
+Valgrind all work on a \code{native_sim} program as on any other Linux program.
+
+The counterweight belongs on the first page: \textbf{\code{native_sim} is not a microcontroller.}
+Code runs in zero simulated time, so an interrupt cannot preempt a running thread until that thread
+calls into the kernel. A busy loop waiting for an interrupt never ends. Nothing here teaches pin
+multiplexing, clocks, power or flashing. Chapter~\ref{c3:ch} shows the time model on purpose,
+because knowing what the simulator does \emph{not} do is as important as knowing what it does.
+
+\section*{What you will do}
+Along the way you will write code, not just read it. You will:
+\begin{itemize}
+  \item Set up a pinned Zephyr workspace and build and run applications on \code{native_sim}.
+  \item Configure applications with Kconfig and describe hardware with devicetree overlays.
+  \item Write multi-threaded applications with the kernel's scheduling and IPC primitives.
+  \item Structure an application around zbus channels and a state machine.
+  \item Write a devicetree-driven sensor driver, and an emulator to test it against.
+  \item Test with ztest and Twister, and debug with GDB and the sanitizers.
+\end{itemize}
+
+The examples and exercises stay close to typical embedded problems: blinking an LED and reading a
+button through an emulated GPIO controller, periodic sampling with timers and work queues, producer
+and consumer threads, priority inversion produced and then fixed, a driver for an I2C temperature
+sensor, and a shell command and a setting that survives a restart.
+
+\section*{What you should be able to do at the end}
+Having worked through the book, you should be able to:
+\begin{itemize}
+  \item Set up a Zephyr workspace and explain what west, CMake, Kconfig and devicetree each
+    contribute.
+  \item Find out why a configuration option or devicetree node did not take effect.
+  \item Read a devicetree and binding, and access devices and properties from C.
+  \item Choose between cooperative and preemptive threads, and between an ISR, a work item and a
+    thread.
+  \item Use Zephyr's IPC primitives, and explain when each one is the right tool.
+  \item Write a devicetree-instantiated driver for Zephyr's device model.
+  \item Test drivers and applications with ztest, emulators and Twister.
+  \item Explain what \code{native_sim} simulates faithfully and what it does not.
+\end{itemize}
+
+\section*{What you are assumed to know}
+The subject of this book is \textbf{Zephyr}, not embedded programming in general. You are expected
+to arrive already comfortable with:
+\begin{itemize}
+  \item C programming: functions, pointers, structs and the rest of the language.
+  \item A Linux terminal, \code{make} and, at the level of reading it, CMake.
+\end{itemize}
+Basic RTOS concepts, threads, priorities and blocking, help, but Chapters~\ref{c3:ch}
+and~\ref{c4:ch} cover them again in Zephyr's terms. What is underneath them, the context switch
+itself, is the subject of a different course, \emph{Real-Time Kernel Design}.
+
+\section*{How the book is organised}
+The book is typeset from a six-lecture course, and each chapter is one lecture. Its sections are
+the lecture's appendices, in the same order and with the same subsections, so a chapter here and a
+lecture directory in the repository can be read side by side:
+
+\begin{booktable}{@{}p{5.2em}p{3.6em}L@{}}
+  \thead{Chapter} & \thead{Lecture} & \thead{Topic} \\
+  \midrule
+  1 & \file{L01} & Zephyr, west and the build \\
+  2 & \file{L02} & Devicetree \\
+  3 & \file{L03} & Kernel I: threads, time and work queues \\
+  4 & \file{L04} & Kernel II: communication and application architecture \\
+  5 & \file{L05} & Writing a driver \\
+  6 & \file{L06} & Subsystems and debugging \\
+\end{booktable}
+
+Every chapter opens with what is in it, works through the material, closes with a review of what
+you should now be able to explain, and ends with its exercises.
+
+\textbf{The live-coding examples are not printed.} Each chapter is taught from a handful of small
+applications, which live in the companion repository under \file{lectures/LNN/examples}; every one
+has a README saying how to build and run it and what to look at. The book names them where they
+belong, and the code in the text is the code that makes a point, not a listing of every file.
+
+\section*{What the exercises look like}
+The exercises come in \textbf{sets}. A set builds one small application, or one part of a larger
+one, and each exercise in a set adds a piece of it. Every exercise is labelled with its kind:
+
+\begin{booktable}{@{}p{7.4em}L@{}}
+  \thead{Kind} & \thead{What it asks of you} \\
+  \midrule
+  \kindtag{Code} & Write C, build it for \code{native_sim}, and check it with \code{make test},
+    which also compares what it printed with the output the exercise gives. \\
+  \kindtag[fillaccent2]{Reflection} & Answer in prose: explain what your program does, or why the
+    build behaved as it did. \\
+\end{booktable}
+
+\textbf{The solutions are not in this book.} They are published in the companion repository, under
+\file{lectures/LNN/appendix/solutions}, a few days after each lecture. Try each exercise before you
+read them.
+
+\section*{Two written papers, and what they are not}
+Nothing in the course this book comes from is marked. Assessment is the exercise set after every
+chapter, each with a published solution, and the questions in every chapter's review.
+
+Appendices~\ref{exam:ch:about} to \ref{ansb:ch:answers} hold two three-hour papers with worked
+solutions, and they check something else: \textbf{what you can reconstruct on paper, with nothing
+in front of you.} Eight questions each, mixing what a build decided and why with the artifacts a
+Zephyr application is made of, and no build in the room to tell you whether you are right.
+
+\textbf{They exist purely so that you can test your own knowledge after working through the book.
+They gate nothing, they are not a qualification, and no part of the book requires them.}
+
+\textbf{Take one after the last chapter.} Both papers draw on all six chapters, so sitting one
+partway through examines material you have not read yet.
+
+\section*{Setting up}
+Everything in this book runs in a Linux terminal: on Linux itself, or on Windows through WSL 2.
+\Secref{c1:app:a} installs the packages, sets up the workspace and checks that it works; do that
+first, because fetching Zephyr takes a few minutes. In short, it is:
+
+\begin{shell}
+git clone https://github.com/qrtech-academy/zephyr.git
+cd zephyr
+make setup
+\end{shell}
+
+\noindent\code{make setup} creates a Python environment in \file{.venv}, installs west into it, and
+fetches the Zephyr release the manifest pins into \file{deps/}. Nothing is installed outside the
+repository. Then, in every new terminal:
+
+\begin{shell}
+source env.sh
+\end{shell}
+
+\noindent Three more commands cover everything the book asks of the repository:
+
+\begin{shell}
+# Build an example, and run it.
+west build -p -b native_sim/native/64 lectures/L01/examples/hello
+west build -t run
+
+# Test your exercises.
+make test
+\end{shell}
+
+\noindent You write your exercise solutions in the repository, in \file{lectures/LNN/exercises},
+where each lecture's README says which file goes where. \code{make test} then runs every lecture's
+tests against them: a set you have not started is reported as \code{SKIP}, with the file its tests
+are waiting for, and a set you have written is built, run and compared with the output the exercise
+gives.

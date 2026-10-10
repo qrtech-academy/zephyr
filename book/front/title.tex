@@ -1,0 +1,68 @@
+% Half-title, title and copyright pages.
+%
+% \bookversion is the release the PDF was built for: `make VERSION=v1.2.3` passes it in, and the
+% release workflow passes the tag. Without it the title page carries only the date of the build.
+\providecommand{\bookversion}{}
+\newcommand{\bookdate}{\number\day\space\ifcase\month\or January\or February\or March\or April\or
+  May\or June\or July\or August\or September\or October\or November\or December\fi\space
+  \number\year}
+\newcommand{\bookedition}{\ifx\bookversion\empty\else\bookversion\,·\,\fi\bookdate}
+
+\thispagestyle{empty}
+\vspace*{2.2in}
+\begin{flushright}
+  {\Large\bfseries Zephyr RTOS}
+\end{flushright}
+\cleardoublepage
+
+\thispagestyle{empty}
+\vspace*{1.1in}
+\begin{flushleft}
+  {\color{accent}\rule{0.9in}{2.5pt}}\par\vspace{1.4ex}
+  {\fontsize{32}{38}\selectfont\bfseries Zephyr\\[0.15ex] RTOS\par}
+  \vspace{2.2ex}
+  {\Large\itshape The build, the kernel and a driver,\\on a board that does not exist\par}
+  \vspace{1.2in}
+  {\large Erik Pihl\par}
+  \vfill
+  {\small\scshape\lsstyle qrtech academy\par}
+  \vspace{0.6ex}
+  {\small\color{muted} \bookedition\par}
+\end{flushleft}
+\newpage
+
+\thispagestyle{empty}
+\vspace*{\fill}
+{\small
+\noindent\textit{Zephyr RTOS}\\
+Copyright \textcopyright\ 2026 QRTECH Academy.
+
+\medskip
+\noindent The text and figures of this book, and of the course it is typeset from, are licensed
+under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
+(CC BY-NC-SA 4.0). You may copy and redistribute them, and adapt them, for any non-commercial
+purpose, provided you give appropriate credit and share what you make under the same license. To
+view a copy of the license, visit \url{https://creativecommons.org/licenses/by-nc-sa/4.0/}.
+
+\medskip
+\noindent The code in this book may also be used under the MIT License, which is the license of all
+the code in the companion repository. The repository holds the lecture material, the example
+programs, the exercises and their test suites:
+
+\medskip
+\noindent\url{https://github.com/qrtech-academy/zephyr}
+
+\medskip
+\noindent Every program in this book is built for Zephyr 4.4.2 and the board
+\code{native_sim/native/64}, with the host's GCC, on Linux. Zephyr itself is licensed under
+Apache~2.0 and is not part of this book; \secref{c1:app:a} fetches it. Zephyr, Linux and the other
+product names in this book are trademarks of their respective owners.
+
+\medskip
+\noindent Set in TeX Gyre Pagella and DejaVu Sans Mono with Lua\LaTeX.
+
+\medskip
+\noindent\textcolor{muted}{Typeset from the six lectures of the course and their exercises. This
+edition: \bookedition.}
+\par}
+\cleardoublepage

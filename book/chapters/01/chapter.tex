@@ -1,0 +1,36 @@
+% Chapter 1, typeset from lectures/L01: the README is the opener and the closing
+% review, and each appendix is a section, in the same order and with the same subsections.
+
+\chapter{Zephyr, west and the Build}
+\label{c1:ch:build}\label{c1:ch}
+
+{\large\itshape What Zephyr is, and how an application becomes a program.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item What Zephyr is: a kernel, drivers, subsystems, and a build system that ties them together.
+  \item \code{native_sim}: Zephyr as a Linux program, and why this book runs on it.
+  \item The west workspace: the manifest, \code{west update}, and pinning a Zephyr release.
+  \item Anatomy of an application: \code{CMakeLists.txt}, \code{prj.conf} and \code{src/}.
+  \item Building and running: \code{west build}, the build directory, and \code{west build -t run}.
+  \item Kconfig: options, dependencies, where values come from, and how to read what the build chose.
+  \item Application-specific Kconfig options, used from C and from CMake.
+  \item \code{printk()} and the logging subsystem: modules, levels and compile-time filtering.
+\end{itemize}
+\end{chapterbox}
+
+This chapter is about everything that happens before a line of your code is compiled. Zephyr decides
+what a build contains, and what the hardware in it is, long before the compiler runs, and nearly
+every question a newcomer has is really a question about that: where Zephyr lives, what west does
+with it, which options a build ended up with, and why an option that was set was not the one used.
+
+Work the chapter in order. \Secref{c1:app:a} sets up the workspace: do it before the first lecture,
+because fetching Zephyr takes a few minutes. \Secref{c1:app:b} is the substance of the chapter, and
+the exercises in \secref{c1:sec:exercises} are where you write the code yourself. The examples the
+lecture is taught from are \file{lectures/L01/examples/hello} and
+\file{lectures/L01/examples/kconfig} in the companion repository.
+
+\input{chapters/01/setup}
+\input{chapters/01/build}
+\input{chapters/01/summary}
+\input{chapters/01/exercises}

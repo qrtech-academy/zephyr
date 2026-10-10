@@ -1,0 +1,114 @@
+% Appendix, from exam/README.md: what the two written papers are for, what they cover, the
+% conventions they assume, and how they are marked.
+
+\chapter{The Self-Assessment Papers}
+\label{exam:ch:about}
+
+This appendix and the four after it hold two complete three-hour papers for \emph{Zephyr RTOS},
+with worked solutions. Appendices~\ref{exa:ch:paper} and \ref{exb:ch:paper} are the papers,
+questions only; Appendices~\ref{ansa:ch:answers} and \ref{ansb:ch:answers} are their model answers,
+with marks.
+
+\section*{What these are for}
+The book has \textbf{no exam and nothing is marked}. What you get instead is the exercise sets after
+every chapter, each with a published solution, and the questions in every chapter's review.
+
+These papers do not replace that. \textbf{They are here for you to test your own skills and
+knowledge, nothing more.} They gate nothing, they are not a qualification, and no part of the book
+requires them. Nothing in the companion repository depends on them, and neither \code{make examples}
+nor \code{make test} knows they exist.
+
+What they check is something the exercises cannot. Every exercise is done at a keyboard, with the
+chapter open beside you and a build ready to say no. These papers ask what you can reconstruct with
+none of that in front of you --- which of the rules you have absorbed, and which you have merely
+been looking up.
+
+\textbf{Take one after the last chapter.} Both papers draw on all six chapters, so sitting one
+partway through examines material you have not read yet, and the result says more about how far you
+have read than about what you have understood.
+
+\section*{The two papers}
+Both cover the whole book, Chapters~1 to 6, at the same weighting. They share no question. Either
+can be used alone; use both as a main sitting and a resit, or in alternate years.
+
+\begin{booktable}{@{}p{4.6em}Lp{5.4em}r@{}}
+  \thead{Question} & \thead{Topic} & \thead{Chapters} & \thead{Marks} \\
+  \midrule
+  1 & The workspace and the build & 1 & 12 \\
+  2 & Kconfig and logging & 1 & 12 \\
+  3 & Devicetree, bindings and overlays & 2 & 13 \\
+  4 & Threads, scheduling and time & 3 & 13 \\
+  5 & Interrupt context, work queues and simulated time & 3 & 12 \\
+  6 & Synchronization and communication & 4 & 13 \\
+  7 & Writing a driver & 5 & 13 \\
+  8 & Subsystems and debugging & 6 & 12 \\
+  \midrule
+    & & & \textbf{100} \\
+\end{booktable}
+
+\textbf{Both papers mix prose with artifacts}, because the subject does. Roughly half the marks are
+for explaining what a build decided and why; the other half are for reading or writing the things a
+Zephyr application is made of: a \code{prj.conf}, a devicetree overlay, a binding, a driver, a
+thread.
+
+The two papers differ in which half they lean on:
+\begin{itemize}
+  \item \textbf{Paper A leans towards what the build hands you.} Its questions put an artifact in
+    front of you --- a build that aborted, a devicetree that produced the wrong macro, a trace of
+    threads in the wrong order, a driver whose device is never ready --- and ask what happened and
+    what to change. Naming the cause is half the marks; saying what it does to the running program
+    is the other half.
+  \item \textbf{Paper B leans towards what you write.} It asks for a Kconfig menu, a binding and the
+    overlay that instantiates it, a sampling design split between an interrupt and a work queue, the
+    skeleton of a devicetree-instantiated driver, and a ztest suite for it.
+\end{itemize}
+
+Neither paper asks anything that a careful reader could not answer from the chapters. Where a
+question turns on a rule that is easy to state and easy to get backwards --- which file a Kconfig
+value comes from last, why a log message that was filtered out is not in the binary, which context a
+timer's expiry function runs in --- the solution says so at length, because that is where the marks
+and the understanding both are.
+
+\section*{Conventions the papers assume}
+Both papers state these in their own rubric, so a candidate never has to have read this appendix.
+\begin{itemize}
+  \item \textbf{Zephyr 4.4 and the board \code{native_sim/native/64}}, built with the host's GCC, as
+    in the book.
+  \item \textbf{Code is marked on semantics, not syntax.} A missing \code{#include}, a missing
+    semicolon or a brace in the wrong column costs nothing. A missing \code{device_is_ready()} check
+    costs everything.
+  \item \textbf{The book's house style is expected} where a question asks for it: Zephyr's own,
+    meaning \code{snake_case}, the kernel's \code{k_} and \code{K_} spellings, application options
+    prefixed \code{APP_}, \code{IS_ENABLED()} rather than \code{#ifdef} where both would work, and
+    log modules rather than \code{printk()} in anything that is not a one-off.
+  \item \textbf{The simulator's behaviour may be assumed} without deriving it: 100 ticks per second,
+    a sleep that ends on the tick after the one it asked for, simulated time that only advances when
+    every thread is waiting, immediate logging, and no thread analyzer, stack protection or
+    userspace.
+  \item \textbf{``State the consequence'' means the consequence.} Naming a cause earns half the
+    marks; saying what it does to the running program earns the other half. ``This is wrong'' scores
+    nothing.
+  \item \textbf{Where a question asks for a stated number of defects}, listing more is not
+    penalised, but only that many are marked, so the strongest answers go first.
+\end{itemize}
+
+\section*{Marking}
+Every solution is written to be marked by somebody who has read the chapters and does not otherwise
+write Zephyr applications for a living, so each carries the reasoning rather than the answer alone.
+Marks are shown per part.
+
+Three conventions worth agreeing before a paper is marked:
+\begin{itemize}
+  \item \textbf{Method carries the marks.} A correct diagnosis with a clumsy fix is worth more than
+    a correct fix with no diagnosis. Several questions feed the next part, so an error should be
+    followed through rather than penalised twice.
+  \item \textbf{The named traps are worth full marks on their own.} A number of parts exist entirely
+    to see whether a candidate walks into a specific mistake: a \code{CONFIG_} option misspelled in
+    C rather than in \code{prj.conf}, a devicetree node that is \code{disabled} rather than absent, a
+    \code{k_sleep()} in a timer's expiry function, a semaphore used as a lock, a driver that reads
+    its configuration from \code{dev->data}, a busy loop on \code{native_sim}. Where a solution flags
+    one of these, a candidate who walks into it loses those marks and no others.
+  \item \textbf{The discussion parts are not decoration.} ``State why'' is where the book's actual
+    content is, and a paper marked only on whether the code would build would pass a candidate who
+    has understood none of it.
+\end{itemize}

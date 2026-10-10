@@ -1,0 +1,15 @@
+% The lectures' copies of the book's figures: the same drawing, in the book's fonts and inks, on a
+% page cut to its size with a 10pt margin. `make -C book png` renders each one to
+% lectures/LNN/appendix/images/, so a lecture and the book show one drawing.
+%
+%   lualatex '\def\pngfigure{build_pipeline}\input{figures/png.tex}'
+\documentclass{book}
+\usepackage{zephyrbook}
+\begin{document}
+\setbox0\hbox{\input{figures/\pngfigure}}
+\pdfvariable horigin 0pt
+\pdfvariable vorigin 0pt
+\pagewidth=\dimexpr\wd0+20pt\relax
+\pageheight=\dimexpr\ht0+\dp0+20pt\relax
+\shipout\hbox{\kern10pt\vbox{\kern10pt\hbox{\box0}\kern10pt}}
+\end{document}

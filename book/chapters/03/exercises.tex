@@ -1,0 +1,504 @@
+% Section 3.3, from lectures/L03/appendix/b_exercises.md.
+
+\section{Exercises}
+\label{c3:sec:exercises}\label{c3:app:b}
+These exercises reinforce the concepts from \secref{c3:app:a}.
+
+\begin{aside}
+\textbf{How to check your work.} Write each exercise set as its own application under
+\file{lectures/L03/exercises}, with the file names given there, and run \code{make test} from the
+repository root. A set’s tests switch on as soon as its files exist, and a set you have not started
+is reported as \code{SKIP}. Each application grows through its set, and the tests check where it
+ends up. Programs run on \code{native_sim} in simulated time, so their output, timestamps included,
+is compared with the expected output line by line.
+
+The solutions are published in the companion repository, under
+\file{lectures/L03/appendix/solutions}, a few days after the lecture. Try each exercise yourself
+before you read them.
+\end{aside}
+
+Remember \code{source env.sh} in every new terminal. Build and run an exercise from the repository
+root:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L03/exercises/exercise1
+./build/zephyr/zephyr.exe -stop_at=2 -no-rt
+\end{shell}
+
+A program that never stops by itself, even with \code{-stop_at}, is stuck in a busy loop: press
+\code{Ctrl+C} \textbf{twice}.
+
+% ---------------------------------------------------------------------
+\exerciseset{Who runs when}
+\label{c3:set:1}
+Create an application named \code{exercise1} to work in for this exercise set, with a
+\code{CMakeLists.txt} as in Chapter~\ref{c1:ch}, and \code{CONFIG_THREAD_NAME=y} in \code{prj.conf}.
+
+Every line the program prints comes from this function, which prints the uptime, and the name and
+priority of the thread that calls it. Copy it into \code{src/main.c}:
+
+\begin{ccode}
+static void trace(const char *what)
+{
+	k_tid_t self = k_current_get();
+
+	printk("%4lld ms  %-7s (%2d)  %s\n", k_uptime_get(), k_thread_name_get(self),
+	       k_thread_priority_get(self), what);
+}
+\end{ccode}
+
+\exercise{Three threads and main}{Code}
+\label{c3:ex:1.1}
+
+\task{Tasks}
+\begin{itemize}
+  \item Write an entry function \code{periodic()} for a thread, which for now only calls
+    \code{trace("started")}.
+  \item Define three threads with \code{K_THREAD_DEFINE()}, all running \code{periodic()}, each with a stack
+    of 1024 bytes, no options and no start delay:
+\begin{narrowtable}{@{}ll@{}}
+  \thead{Thread} & \thead{Priority} \\
+  \midrule
+  \code{control} & -1 \\
+  \code{sensor} & 3 \\
+  \code{logger} & 7 \\
+\end{narrowtable}
+  \item In \code{main()}, call \code{trace("started")} and return.
+\end{itemize}
+
+Before you run it, write down the order in which you expect the four lines. Then run it.
+
+\task{Reflection}
+\begin{itemize}
+  \item In which order are the four lines printed? Why does \code{control} print before \code{main}, while
+    \code{sensor} and \code{logger} print after it?
+  \item Change \code{control}’s priority to 1 and run it again. What changes, and why?
+\end{itemize}
+
+\exercise{Periodic threads}{Code}
+\label{c3:ex:1.2}
+
+\task{Tasks}
+Pass each thread two numbers through its first two arguments, with \code{INT_TO_POINTER()}, and read
+them in \code{periodic()} with \code{POINTER_TO_INT()}:
+
+\begin{narrowtable}{@{}lll@{}}
+  \thead{Thread} & \thead{\code{p1}: period, in ms} & \thead{\code{p2}: work, in ms} \\
+  \midrule
+  \code{control} & 300 & 150 \\
+  \code{sensor} & 200 & 0 \\
+  \code{logger} & 100 & 0 \\
+\end{narrowtable}
+
+Extend \code{periodic()} so that, after \code{trace("started")}, it runs one round per period up to
+600 ms:
+
+\begin{ccode}
+for (int round = 1; round * period_ms <= 600; round++) {
+	k_msleep(period_ms);
+	trace("awake");
+	if (work_ms > 0) {
+		k_busy_wait(work_ms * USEC_PER_MSEC);
+		trace("work done");
+	}
+}
+\end{ccode}
+
+\code{k_busy_wait()} stands for work that keeps the CPU busy: unlike a loop, it lets simulated time
+pass.
+
+\task{Reflection}
+\begin{itemize}
+  \item At which uptimes does \code{logger} wake up? Why are they not multiples of 100?
+  \item \code{logger}’s third round should start at 330 ms. When is it printed, and why?
+\end{itemize}
+
+\exercise{On the dot}{Code}
+\label{c3:ex:1.3}
+
+\task{Tasks}
+Replace the relative sleep with an \textbf{absolute} one, so that each thread wakes at exactly every
+multiple of its period, up to and including 600 ms. The loop becomes a loop over the next wake-up
+time, \code{next}, from \code{period_ms} to 600 in steps of \code{period_ms}, with
+\code{k_sleep(K_TIMEOUT_ABS_MS(next))} at the top of each round.
+
+The output must be:
+
+\begin{console}
+   0 ms  control (-1)  started
+   0 ms  main    ( 0)  started
+   0 ms  sensor  ( 3)  started
+   0 ms  logger  ( 7)  started
+ 100 ms  logger  ( 7)  awake
+ 200 ms  sensor  ( 3)  awake
+ 200 ms  logger  ( 7)  awake
+ 300 ms  control (-1)  awake
+ 450 ms  control (-1)  work done
+ 450 ms  sensor  ( 3)  awake
+ 450 ms  logger  ( 7)  awake
+ 460 ms  logger  ( 7)  awake
+ 500 ms  logger  ( 7)  awake
+ 600 ms  control (-1)  awake
+ 750 ms  control (-1)  work done
+ 750 ms  sensor  ( 3)  awake
+ 750 ms  logger  ( 7)  awake
+\end{console}
+
+\textbf{Hint:} \code{next} must be an \code{int64_t}, like the uptime.
+
+\task{Reflection}
+\begin{itemize}
+  \item Which of \code{logger}’s rounds is printed at 450 ms, which at 460 ms, and why is the second one 10
+    ms later rather than at the same moment?
+  \item Which round of \code{sensor} is printed at 450 ms?
+  \item \code{control} is cooperative. Make it preemptible, with priority 1. Does anything change between
+    300 and 450 ms? Why, or why not?
+  \item Keep \code{control} at priority 1 and give \code{sensor} priority 0. What happens at 400 ms now? Why
+    is \code{control}’s work still done at 450 ms, although it was interrupted?
+  \item Replace \code{k_busy_wait()} with a \code{for} loop that counts to a few hundred million. What
+    happens to the trace on \code{native_sim}, and why would it be different on a microcontroller?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{A timer and the system work queue}
+\label{c3:set:2}
+Create an application named \code{exercise2} to work in for this exercise set, with
+\code{CONFIG_THREAD_NAME=y} in \code{prj.conf}.
+
+Use this function to name the context that code runs in:
+
+\begin{ccode}
+static const char *context(void)
+{
+	return k_is_in_isr() ? "ISR" : k_thread_name_get(k_current_get());
+}
+\end{ccode}
+
+\exercise{From ISR to thread}{Code}
+\label{c3:ex:2.1}
+
+\task{Tasks}
+\begin{itemize}
+  \item Define a work item \code{sample_work} with \code{K_WORK_DEFINE()}, whose handler
+    \code{sample_handler()} counts the samples it has taken.
+  \item Define a timer \code{sample_timer} with \code{K_TIMER_DEFINE()}, whose expiry function
+    \code{timer_expired()} stores \code{context()} in a variable \code{expiry_context} and submits
+    \code{sample_work} to the system work queue.
+  \item In \code{main()}, start the timer with a delay of 250 ms and a period of 250 ms, then print
+    \code{timer started in <context>}, prefixed with the uptime as in the output below, and return.
+  \item In \code{sample_handler()}, print a line for each sample with its number, \code{expiry_context} and
+    \code{context()}, and stop the timer with \code{k_timer_stop()} after the fourth sample.
+\end{itemize}
+
+Every line starts with the uptime, formatted with \code{"\%4lld ms  "}. Exercise~\ref{c3:ex:2.2}
+gives the lines their final form.
+
+\exercise{What a submission does, and a stop function}{Code}
+\label{c3:ex:2.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{timer_expired()}, submit \code{sample_work} \textbf{twice}, and store the two return values
+    of \code{k_work_submit()}.
+  \item Give the timer a stop function, \code{timer_stopped()}, which prints \code{timer stopped, stop
+    function in <context>}.
+  \item Print the return values and both contexts in \code{sample_handler()}.
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+   0 ms  timer started in main
+ 250 ms  sample 1: expiry in ISR, submitted 1 then 0, handler in sysworkq
+ 500 ms  sample 2: expiry in ISR, submitted 1 then 0, handler in sysworkq
+ 750 ms  sample 3: expiry in ISR, submitted 1 then 0, handler in sysworkq
+1000 ms  sample 4: expiry in ISR, submitted 1 then 0, handler in sysworkq
+1000 ms  timer stopped, stop function in sysworkq
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item The work was submitted twice for every expiry. How many times did the handler run, and what do the
+    return values 1 and 0 mean?
+  \item Why does the stop function run in \code{sysworkq}, and not in an ISR like the expiry function?
+  \item The samples come at 250, 500, 750 and 1000 ms, while \code{k_msleep(250)} in a loop would wake at
+    260, 520, and so on. Why do the timer’s expiries not drift?
+  \item Add \code{k_msleep(10)} to \code{timer_expired()} and run it. Then build again with \code{--
+    -DCONFIG_ASSERT=y} and run it. What happens each time, and what does that tell you about assertions?
+  \item Remove the \code{k_msleep(10)}, and instead add \code{k_msleep(300)} to \code{sample_handler()},
+    after the print and before the check that stops the timer, so that handling a sample takes longer
+    than the period. When are the samples taken now? What does \code{k_work_submit()} return, and why is
+    there a fifth sample, after the timer was stopped?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Debouncing}
+\label{c3:set:3}
+Create an application named \code{exercise3} to work in for this exercise set.
+
+A mechanical button does not change level once when pressed: its contacts bounce, and the pin
+toggles several times over a few milliseconds. \textbf{Debouncing} means reporting a new level only
+when the pin has stayed at it for a while. This set uses Chapter~\ref{c2:ch}’s emulated GPIO
+controller, and a thread that plays a finger with bouncing contacts.
+
+Use these files as they are. \code{prj.conf}:
+
+\begin{kconfigcode}
+# The GPIO API, for the button.
+CONFIG_GPIO=y
+
+# A tick every millisecond, so that a bounce a few milliseconds long can be timed.
+CONFIG_SYS_CLOCK_TICKS_PER_SEC=1000
+\end{kconfigcode}
+
+\code{app.overlay}, a button on pin 1 of the emulated GPIO controller:
+
+\begin{dtscode}
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	aliases {
+		sw0 = &button0;
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpio0 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "Button";
+		};
+	};
+};
+\end{dtscode}
+
+And in \code{src/main.c}, the finger: a press that bounces, a release that bounces, and a glitch too
+short to be a press. \code{edges} is the count of edges your callback has seen, below.
+
+\begin{ccode}
+/* Set the button's physical level: 0 is pressed, since the button is active low. */
+static void level(int value, int hold_ms)
+{
+	gpio_emul_input_set(button.port, button.pin, value);
+	k_msleep(hold_ms);
+}
+
+static void finger(void *p1, void *p2, void *p3)
+{
+	k_sleep(K_TIMEOUT_ABS_MS(100));
+	level(0, 2);
+	level(1, 1);
+	level(0, 3);
+	level(1, 1);
+	level(0, 300);
+
+	level(1, 4);
+	level(0, 2);
+	level(1, 300);
+
+	level(0, 5);
+	level(1, 300);
+
+	printk("%4lld ms  finger done, %ld edges\n", k_uptime_get(), (long)atomic_get(&edges));
+}
+
+K_THREAD_DEFINE(finger_thread, 1024, finger, NULL, NULL, NULL, 7, 0, 0);
+\end{ccode}
+
+\exercise{Every edge}{Code}
+\label{c3:ex:3.1}
+
+\task{Tasks}
+\begin{itemize}
+  \item Get the button as a \code{struct gpio_dt_spec} named \code{button}, from the \code{sw0} alias.
+  \item In \code{main()}, check that the button is ready, configure it as an input, configure an interrupt
+    on \textbf{both} edges, and add a callback.
+  \item In the callback, count every edge in an \code{atomic_t} named \code{edges}.
+\end{itemize}
+
+Run it: the finger reports 10 edges at 1028 ms.
+
+\exercise{Only real presses}{Code}
+\label{c3:ex:3.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item Define a delayable work item, \code{debounce_work}, with a handler that reads the button’s logical
+    level with \code{gpio_pin_get_dt()}, and prints a line only when that level differs from the last
+    one it reported (the button starts released):
+\begin{console}
+<uptime> ms  pressed, after <edges> edges
+<uptime> ms  released, after <edges> edges
+\end{console}
+  \item In the callback, after counting the edge, (re)schedule \code{debounce_work} to run 20 ms after the
+    \textbf{last} edge.
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+ 132 ms  pressed, after 5 edges
+ 441 ms  released, after 8 edges
+1028 ms  finger done, 10 edges
+\end{console}
+
+\textbf{Hint:} Of \code{k_work_schedule()} and \code{k_work_reschedule()}, only one moves an already
+scheduled deadline.
+
+\task{Reflection}
+\begin{itemize}
+  \item The last edge of the press is at 111 ms. Why is the press reported at 132 ms, and not at 131?
+  \item Why is the glitch at 721 ms, two edges, never reported?
+  \item Try the other one of \code{k_work_schedule()} and \code{k_work_reschedule()}. When are the press and
+    the release reported now? The output still has the same events: describe a finger for which it would
+    not.
+  \item On \code{native_sim}, the callback runs in the finger’s thread. In which context would it run on a
+    microcontroller, and why is it still correct to call your scheduling function from it?
+  \item Only the work handler reads and writes the variable holding the last reported level, so it needs no
+    lock. Why can the handler not run twice at the same time?
+  \item Set \code{CONFIG_SYS_CLOCK_TICKS_PER_SEC=100} and run it. When are the press and the release
+    reported, and why?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Stop spinning}
+\label{c3:set:4}
+Create an application named \code{exercise4} to work in for this exercise set, with a
+\code{prj.conf} holding only a comment.
+
+This program reads three channels of a converter, whose conversion takes 40 ms, simulated with a
+timer. Copy it into \code{src/main.c}:
+
+\begin{ccode}
+#include <stdbool.h>
+
+#include <zephyr/kernel.h>
+
+/* How long the simulated conversion takes. */
+#define CONVERSION_MS 40
+
+/* Set by the timer's expiry function when the conversion is done. */
+static volatile bool conversion_done;
+
+static void conversion_expired(struct k_timer *timer)
+{
+	conversion_done = true;
+}
+
+K_TIMER_DEFINE(conversion_timer, conversion_expired, NULL);
+
+/* Start a conversion on a channel, wait for it to finish, and return the result. */
+static int convert(int channel)
+{
+	conversion_done = false;
+	k_timer_start(&conversion_timer, K_MSEC(CONVERSION_MS), K_NO_WAIT);
+
+	while (!conversion_done) {
+	}
+
+	return 1000 + channel * 111;
+}
+
+int main(void)
+{
+	for (int channel = 0; channel < 3; channel++) {
+		const int value = convert(channel);
+
+		printk("%3lld ms  channel %d: %d\n", k_uptime_get(), channel, value);
+	}
+	printk("%3lld ms  all channels converted\n", k_uptime_get());
+
+	return 0;
+}
+\end{ccode}
+
+\exercise{The stall}{Code}
+\label{c3:ex:4.1}
+
+\task{Tasks}
+Build it, and run it with \code{./build/zephyr/zephyr.exe -stop_at=1 -no-rt}. Then run \code{make
+test}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Why does the program print nothing, not even channel 0, and why does \code{-stop_at=1} not stop it?
+  \item What happens when you press \code{Ctrl+C} once? And twice?
+  \item What does \code{make test} report for the set, and after how long?
+  \item Would this program work on a microcontroller? Would it be a good program there?
+  \item Would \code{k_yield()} inside the loop fix it on \code{native_sim}? Try it, and explain.
+\end{itemize}
+
+\exercise{A semaphore}{Code}
+\label{c3:ex:4.2}
+
+\task{Tasks}
+Replace the flag with a semaphore: the expiry function gives it, and \code{convert()} takes it with
+\code{K_FOREVER} instead of spinning.
+
+The output must be:
+
+\begin{console}
+ 40 ms  channel 0: 1000
+ 80 ms  channel 1: 1111
+120 ms  channel 2: 1222
+120 ms  all channels converted
+\end{console}
+
+\exercise{No semaphore at all}{Code}
+\label{c3:ex:4.3}
+
+\task{Tasks}
+Remove the semaphore and the expiry function as well, define the timer with
+\code{K_TIMER_DEFINE(conversion_timer, NULL, NULL)}, and wait for it in \code{convert()} with
+\code{k_timer_status_sync()}. The output must be unchanged.
+
+\task{Reflection}
+\begin{itemize}
+  \item Why do the conversions finish at exactly 40, 80 and 120 ms?
+  \item Suppose the timer expired before \code{convert()} started to wait. Would the semaphore version still
+    work? Would the \code{k_timer_status_sync()} version?
+  \item Zephyr’s documentation of \code{native_sim} suggests calling \code{k_cpu_idle()} inside a busy loop
+    that cannot be removed. Try it in the original program. Does it work, and why is 4.3 still the
+    better fix?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Stacks without a stack analyzer}
+\label{c3:set:5}
+No code in this set: answer the questions by building and looking.
+
+\exercise[fillaccent2]{Frames}{Reflection}
+\label{c3:ex:5.1}
+
+\task{Tasks}
+Build your \code{exercise2} with static stack usage analysis:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L03/exercises/exercise2 -- -DCONFIG_STACK_USAGE=y
+\end{shell}
+
+\noindent Answer, using \code{build/CMakeFiles/app.dir/src/main.c.su} and the other \code{.su} files
+in \code{build/}:
+
+\begin{itemize}
+  \item How large is \code{sample_handler()}’s stack frame?
+  \item On which thread’s stack does \code{sample_handler()} run, and how large is that stack? Find the
+    option that sets it in \code{build/zephyr/.config}.
+  \item Is \code{sample_handler()}’s frame all it needs? Which functions does it call, and how large are
+    their frames?
+  \item On a microcontroller, on which stack would \code{timer_expired()} run, and which option sets its
+    size?
+\end{itemize}
+
+\exercise[fillaccent2]{What does not work here}{Reflection}
+\label{c3:ex:5.2}
+
+\task{Tasks}
+Build \code{exercise2} again with \code{-- -DCONFIG_THREAD_ANALYZER=y}.
+
+\task{Reflection}
+\begin{itemize}
+  \item What happens, and which dependency is not met?
+  \item Why can a thread analyzer that measures how much of each thread’s stack was used not work on
+    \code{native_sim}?
+\end{itemize}

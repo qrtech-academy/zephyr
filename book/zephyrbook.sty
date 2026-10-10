@@ -1,0 +1,439 @@
+% zephyrbook.sty - the design of "Zephyr RTOS" as a book.
+%
+% Every visual decision lives here, so the chapters describe content and nothing else. The design
+% is the one the Modern Embedded C++ book uses, with the code blocks turned around to suit this
+% text: C takes the accent, and the languages a Zephyr build is configured in - devicetree,
+% Kconfig, YAML and JSON - share an ink of their own, because half of what this book is about is
+% written in them rather than in C.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{zephyrbook}[2026/09/19 Zephyr RTOS book design]
+
+% ------------------------------------------------------------------------------------------
+% Page. 7.5 x 9.25 in, a common trim for programming texts; the text block is wide enough for an
+% 84-column line of code at the listing size.
+% ------------------------------------------------------------------------------------------
+\RequirePackage[
+  paperwidth=7.5in, paperheight=9.25in,
+  inner=0.85in, outer=1.15in, top=0.95in, bottom=1.0in,
+  headheight=14pt, headsep=18pt, footskip=30pt]{geometry}
+
+% ------------------------------------------------------------------------------------------
+% Type. Palatino for the text, and DejaVu Sans Mono for code: a type name reads the same in a
+% sentence as in a listing.
+% ------------------------------------------------------------------------------------------
+\RequirePackage{fontspec}
+\RequirePackage{unicode-math}
+\setmainfont{TeX Gyre Pagella}
+\setsansfont{TeX Gyre Heros}[Scale=MatchLowercase]
+% A space inside inline code may stretch a little, as a word space does; listings set their own
+% fixed columns and are not affected.
+\setmonofont{DejaVu Sans Mono}[Scale=0.84, HyphenChar=None, WordSpace={1,0.4,0.15}]
+\setmathfont{TeX Gyre Pagella Math}
+\RequirePackage[protrusion=true, expansion=true, tracking=true]{microtype}
+\SetTracking{encoding=*, shape=sc}{40}
+
+% ------------------------------------------------------------------------------------------
+% Colour.
+% ------------------------------------------------------------------------------------------
+\RequirePackage[table]{xcolor}
+\definecolor{accent}{HTML}{C00000}
+\definecolor{accent2}{HTML}{0050B3}
+\definecolor{accent3}{HTML}{2E7D32}
+\definecolor{muted}{HTML}{767676}
+\definecolor{ink}{HTML}{3A3A3A}
+\definecolor{fillaccent}{HTML}{F4D7D7}
+\definecolor{fillaccent2}{HTML}{D6E4F5}
+\definecolor{fillaccent3}{HTML}{D9EDDA}
+\definecolor{fillmuted}{HTML}{E8E8E8}
+\definecolor{codebg}{HTML}{F6F5F2}
+\definecolor{rule}{HTML}{BBBBBB}
+
+% ------------------------------------------------------------------------------------------
+% Structure: chapter openers, section heads, running heads.
+% ------------------------------------------------------------------------------------------
+\RequirePackage{titlesec}
+\RequirePackage{titletoc}
+
+\titleformat{\chapter}[display]
+  {\normalfont\raggedright}
+  {\color{accent}\large\scshape\lsstyle\MakeLowercase{\chaptertitlename}\enspace\thechapter}
+  {1.2ex}
+  {\fontsize{26}{30}\selectfont\bfseries}
+  [\vspace{1.4ex}{\color{rule}\titlerule[0.6pt]}]
+\titleformat{name=\chapter, numberless}[display]
+  {\normalfont\raggedright}
+  {}
+  {0pt}
+  {\fontsize{26}{30}\selectfont\bfseries}
+  [\vspace{1.4ex}{\color{rule}\titlerule[0.6pt]}]
+\titlespacing*{\chapter}{0pt}{0.35in}{0.3in}
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries\raggedright}
+  {\color{accent}\thesection}{0.7em}{}
+\titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.4ex plus .2ex}
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\raggedright}
+  {\color{accent}\thesubsection}{0.7em}{}
+\titlespacing*{\subsection}{0pt}{2.6ex plus 1ex minus .2ex}{1.0ex plus .2ex}
+
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries\itshape\raggedright}
+  {}{0em}{}
+\titlespacing*{\subsubsection}{0pt}{2ex plus .8ex minus .2ex}{0.6ex plus .2ex}
+
+\titleformat{\paragraph}[runin]
+  {\normalfont\normalsize\bfseries}
+  {}{0em}{}[.]
+\titlespacing*{\paragraph}{0pt}{1.4ex plus .5ex minus .2ex}{0.6em}
+
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{1}
+
+% Contents: chapters bold with their number in the accent, sections indented beneath, and every
+% page number right-aligned in a box of its own, so a three-digit one never meets the leaders.
+\titlecontents{chapter}[0pt]
+  {\addvspace{1.4ex}\bfseries}
+  {\makebox[2em][l]{\color{accent}\thecontentslabel}}
+  {}
+  {\hfill\makebox[2.2em][r]{\contentspage}}
+\titlecontents{section}[2em]
+  {\addvspace{0.2ex}}
+  {\makebox[2.6em][l]{\thecontentslabel}}
+  {}
+  {\titlerule*[0.6pc]{.}\makebox[2.2em][r]{\contentspage}}
+
+\RequirePackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\renewcommand{\sectionmark}[1]{\markright{\thesection\enspace #1}}
+\fancyhead[LE]{\small\thepage\qquad\scshape\lsstyle\MakeLowercase{\leftmark}}
+\fancyhead[RO]{\small\scshape\lsstyle\MakeLowercase{\rightmark}\qquad\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}}
+\RequirePackage{emptypage}
+
+% ------------------------------------------------------------------------------------------
+% Text.
+% ------------------------------------------------------------------------------------------
+% Pages end where their text ends. The class default stretches every gap on a page to square
+% the bottom off, which a page with a long listing pushed to the next one cannot survive.
+\raggedbottom
+% With a ragged bottom there is no reason to leave one line of a paragraph alone on a page.
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+% Inline code is set in a monospaced face whose spaces cannot stretch, and a name such as
+% CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME cannot be hyphenated; a little emergency stretch lets
+% the paragraph builder loosen a line around one rather than push it into the margin.
+\setlength{\emergencystretch}{2.5em}
+\tolerance=1000
+\setlength{\parindent}{1.2em}
+\linespread{1.06}
+\RequirePackage[shortlabels]{enumitem}
+\setlist{itemsep=0.25ex, topsep=0.8ex, parsep=0pt}
+\setlist[itemize]{leftmargin=1.4em, label={\color{accent}\textbullet}}
+\setlist[itemize,2]{leftmargin=1.2em, label={\color{muted}\textendash}}
+\setlist[enumerate]{leftmargin=1.6em, label={\bfseries\arabic*.}}
+
+% Inline code. \detokenize is what lets a name like k_work_delayable or an expression like
+% ~(1U << n) be written as it appears in the source, without escaping; zephyrbook.lua undoes the
+% two things \detokenize does to C (a doubled # and a space after \n). A literal %, #, brace or
+% backslash is written \%, \#, \{, \} or \\. \file is for file names, which are long and need to
+% break at a slash.
+% Robust, so it survives the trip through the contents and the running heads.
+\directlua{dofile(kpse.find_file("zephyrbook.lua"))}
+\DeclareRobustCommand{\code}[1]{%
+  {\ttfamily\directlua{zephyrbook_code("\luaescapestring{\detokenize{#1}}")}}}
+% A running head is set in small capitals by lowercasing it; code in a heading keeps its case,
+% because CONFIG_LOG and config_log are two different names.
+\ExplSyntaxOn
+\tl_put_right:Nn \l_text_case_exclude_arg_tl { \code }
+\ExplSyntaxOff
+\RequirePackage{xurl}
+\urlstyle{tt}
+% xurl lets a URL break anywhere, which a long link needs; a file name breaks only at a slash or
+% a dot, so no name is ever split in half.
+\DeclareUrlCommand{\file}{\urlstyle{tt}\def\UrlBreaks{\do\/\do\.}\def\UrlBigBreaks{}}
+
+% Section references in the terse form the lectures use: (Appendix B) becomes (§1.2).
+\newcommand{\secref}[1]{\S\ref{#1}}
+\newcommand{\Secref}[1]{\S\ref{#1}}
+
+% A lead-in for the notes the lectures are full of: "Note:", "Important:", "In short:".
+\newcommand{\note}[1][Note]{\textbf{#1:}\ }
+
+% ------------------------------------------------------------------------------------------
+% Tables. Rules only where they separate; never a vertical one.
+% ------------------------------------------------------------------------------------------
+\RequirePackage{booktabs}
+\RequirePackage{tabularx}
+\RequirePackage{array}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}p}
+\setlength{\aboverulesep}{0.5ex}
+\setlength{\belowrulesep}{0.5ex}
+\newcommand{\thead}[1]{\textbf{#1}}
+% A table set in the flow of the text, full measure, one size down.
+\newenvironment{booktable}[1]
+  {\par\smallskip\noindent\small\tabularx{\linewidth}{#1}\toprule}
+  {\bottomrule\endtabularx\par\smallskip}
+% The same, at its natural width and centred, for tables of short cells.
+\newenvironment{narrowtable}[1]
+  {\par\smallskip\begin{center}\small\begin{tabular}{#1}\toprule}
+  {\bottomrule\end{tabular}\end{center}\par\smallskip}
+
+% ------------------------------------------------------------------------------------------
+% Figures. Drawn in TikZ, in the same inks as the page, so a figure is vector and its labels are
+% set in the book's own faces.
+% ------------------------------------------------------------------------------------------
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, fit, backgrounds, decorations.pathreplacing}
+\RequirePackage{float}
+\RequirePackage{caption}
+\captionsetup{font=small, labelfont={bf,color=accent}, labelsep=quad,
+  justification=centering, skip=6pt}
+% A figure drawn in figures/NAME.tex, placed where it is written.
+\newcommand{\bookfigure}[3]{%
+  \begin{figure}[H]
+    \centering
+    \input{figures/#1}
+    \caption{#2}\label{#3}
+  \end{figure}}
+
+% ------------------------------------------------------------------------------------------
+% Code. A tinted block with a coloured edge; the edge says which language it is. Red for C, blue
+% for the shell and the build files, green for what a build is configured with (devicetree,
+% Kconfig, YAML), and grey for what a program printed back.
+% ------------------------------------------------------------------------------------------
+\RequirePackage{listings}
+\RequirePackage[most]{tcolorbox}
+
+% listings knows C99 as "C". Add what C11 and C17 made keywords, and the ones Zephyr's own code
+% uses constantly, so that a driver reads the way it does in an editor.
+\lstdefinelanguage{c17}[ANSI]{C}{
+  morekeywords={bool, true, false, inline, restrict, _Static_assert, static_assert, _Alignas,
+    _Alignof, _Atomic, _Noreturn, _Thread_local, size_t, uint8_t, uint16_t, uint32_t, uint64_t,
+    int8_t, int16_t, int32_t, int64_t},
+}
+
+% Devicetree. The language of the board: nodes, properties, phandles and unit addresses.
+\lstdefinelanguage{devicetree}{
+  morekeywords={compatible, status, reg, okay, disabled, aliases, chosen},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  moredirectives={include, define},
+}
+
+% Kconfig, as the course writes it: options, types, defaults and dependencies.
+\lstdefinelanguage{kconfig}{
+  morekeywords={config, menuconfig, bool, int, hex, string, default, depends, on, select, range,
+    help, menu, endmenu, choice, endchoice, source, rsource, if, endif, prompt, imply},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+}
+
+% YAML, for bindings, sample.yaml and testcase.yaml.
+\lstdefinelanguage{yamlish}{
+  morekeywords={},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+  morestring=[b]',
+}
+
+% CMake, for an application's CMakeLists.txt.
+\lstdefinelanguage{cmakeish}{
+  morekeywords={cmake_minimum_required, find_package, project, target_sources,
+    target_sources_ifdef, target_include_directories, list, set, if, endif, message, include},
+  sensitive=false,
+  morecomment=[l]{\#},
+  morestring=[b]",
+}
+
+\lstdefinestyle{base}{
+  basicstyle=\ttfamily\small,
+  columns=fixed,
+  keepspaces=true,
+  showstringspaces=false,
+  upquote=true,
+  tabsize=8,
+  breaklines=true,
+  breakatwhitespace=false,
+  % A wrapped line is marked at both ends. Boxed, because LuaTeX will not take colour or maths
+  % loose inside the discretionary a line break is made of.
+  prebreak={\mbox{\textcolor{muted}{\tiny$\hookleftarrow$}}},
+  postbreak={\mbox{\textcolor{muted}{\tiny$\hookrightarrow$}\space}},
+  aboveskip=0pt, belowskip=0pt,
+  commentstyle=\color{muted},
+  stringstyle=\color{accent2},
+}
+\lstdefinestyle{c}{style=base, language=c17,
+  keywordstyle=\color{accent2!85!black}\bfseries,
+  directivestyle=\color{accent}}
+\lstdefinestyle{shell}{style=base, language=bash,
+  keywordstyle={}, morekeywords={}, deletekeywords={test}}
+\lstdefinestyle{make}{style=base, language=make,
+  keywordstyle={}, morecomment=[l]{\#}}
+\lstdefinestyle{cmake}{style=base, language=cmakeish,
+  keywordstyle=\color{accent2!85!black}\bfseries}
+\lstdefinestyle{dts}{style=base, language=devicetree,
+  keywordstyle=\color{accent3!80!black}\bfseries,
+  directivestyle=\color{accent}}
+\lstdefinestyle{kconfig}{style=base, language=kconfig,
+  keywordstyle=\color{accent3!80!black}\bfseries}
+\lstdefinestyle{yaml}{style=base, language=yamlish,
+  keywordstyle={}}
+\lstdefinestyle{output}{style=base, language={}}
+
+\tcbset{
+  codeblock/.style={
+    enhanced, listing only, breakable,
+    colback=codebg, colframe=codebg, boxrule=0pt, arc=0pt, outer arc=0pt,
+    left=8pt, right=6pt, top=4pt, bottom=4pt,
+    before skip=1.2ex plus 2pt, after skip=1.4ex plus 2pt,
+    borderline west={2pt}{0pt}{#1}},
+}
+\newtcblisting{ccode}{codeblock=accent!70, listing options={style=c}}
+\newtcblisting{shell}{codeblock=accent2!70, listing options={style=shell}}
+\newtcblisting{makecode}{codeblock=accent2!70, listing options={style=make}}
+\newtcblisting{cmakecode}{codeblock=accent2!70, listing options={style=cmake}}
+\newtcblisting{dtscode}{codeblock=accent3!70, listing options={style=dts}}
+\newtcblisting{kconfigcode}{codeblock=accent3!70, listing options={style=kconfig}}
+\newtcblisting{yamlcode}{codeblock=accent3!70, listing options={style=yaml}}
+\newtcblisting{console}{codeblock=muted!60, listing options={style=output}}
+
+% A source file typeset straight from the repository, so the book and the code cannot drift
+% apart. The argument is the path from the repository root, which is also what is printed.
+\newtcbinputlisting{\cfile}[1]{codeblock=accent!70, listing options={style=c},
+  listing file={../#1},
+  title={\detokenize{#1}}, detach title,
+  before upper={\noindent{\scriptsize\ttfamily\color{muted}\tcbtitletext}\par\vspace{3pt}}}
+
+% ------------------------------------------------------------------------------------------
+% Boxes in the text.
+% ------------------------------------------------------------------------------------------
+% An aside: something true that the surrounding text is not about.
+\newtcolorbox{aside}[1][]{
+  enhanced, breakable,
+  colback=fillaccent2!45, colframe=fillaccent2!45, boxrule=0pt, arc=0pt,
+  left=10pt, right=10pt, top=6pt, bottom=6pt,
+  borderline west={2.5pt}{0pt}{accent2},
+  before skip=2ex, after skip=2ex,
+  fontupper=\small,
+  #1}
+% The box that opens a chapter, listing what is in it.
+\newtcolorbox{chapterbox}[1]{
+  enhanced, breakable,
+  colback=white, colframe=rule, boxrule=0.5pt, arc=0pt,
+  left=10pt, right=10pt, top=8pt, bottom=6pt,
+  fonttitle=\small\scshape\lsstyle, coltitle=accent, colbacktitle=white,
+  attach boxed title to top left={xshift=8pt, yshift=-2.2mm},
+  boxed title style={boxrule=0pt, arc=0pt, left=3pt, right=3pt, top=0pt, bottom=0pt},
+  title={#1},
+  before skip=2ex, after skip=2.5ex,
+  fontupper=\small}
+
+% ------------------------------------------------------------------------------------------
+% Every heading from here on ends with \@afterheading, so the paragraph after it starts flush
+% left, as it does after a \section.
+%
+% Exercises. The lectures group their exercises into sets, each building a program or a part of
+% one; a set is a heading here, and the exercises in it are numbered within the
+% chapter, so that Exercise 2.5 can never be mistaken for §2.5 or for another chapter's.
+% Each carries its kind: Code for what you write and compile, Reflection for what you answer in
+% prose.
+% ------------------------------------------------------------------------------------------
+\RequirePackage{needspace}
+\newcounter{exercise}[chapter]
+\renewcommand{\theexercise}{\thechapter.\arabic{exercise}}
+\newcounter{exerciseset}[chapter]
+\newcommand{\kindtag}[2][fillmuted]{%
+  \tcbox[on line, colback=#1, colframe=#1, boxrule=0pt, arc=1.5pt,
+    left=3pt, right=3pt, top=1pt, bottom=1pt, boxsep=0pt]{%
+    \small\scshape\lsstyle\MakeLowercase{#2}}}
+% \exerciseset{Title}: the heading a group of exercises sits under.
+\newcommand{\exerciseset}[1]{%
+  \par\addvspace{4ex plus 1ex}\needspace{8\baselineskip}%
+  \refstepcounter{exerciseset}%
+  \noindent{\small\scshape\lsstyle\color{accent}exercise set \theexerciseset}\par
+  \nopagebreak\vspace{0.3ex}%
+  \noindent{\Large\bfseries #1}\par
+  \nopagebreak\vspace{0.4ex}{\color{rule}\hrule height 0.4pt}\par\nopagebreak\vspace{0.6ex}%
+  \@afterindentfalse\@afterheading}
+% \exercise[fill]{Title}{Kind}
+\newcommand{\exercise}[3][fillmuted]{%
+  \par\addvspace{3ex plus 1ex}\needspace{8\baselineskip}%
+  \refstepcounter{exercise}%
+  \noindent{\large\bfseries{\color{accent}Exercise~\theexercise}\quad #2}%
+  \hfill\kindtag[#1]{#3}\par\nopagebreak\vspace{0.8ex}\@afterindentfalse\@afterheading}
+% The lettered parts of an exercise, a) to e), as the lectures letter them.
+\newenvironment{parts}
+  {\begin{enumerate}[label={\bfseries\alph*)}, leftmargin=1.8em, itemsep=0.8ex]}
+  {\end{enumerate}}
+% A part of an exercise with a heading of its own, for the parts the lectures give a title:
+% "a) Constructor", "Tasks", "Reflection".
+\newcommand{\task}[1]{\par\addvspace{1.6ex}\needspace{4\baselineskip}%
+  \noindent{\bfseries #1}\par\nopagebreak\vspace{0.3ex}\@afterindentfalse\@afterheading}
+
+% ------------------------------------------------------------------------------------------
+% The written papers. A question is numbered within its paper and carries its marks in the tag
+% an exercise carries its kind in; a part's marks are set flush right at the end of the part, the
+% way a printed paper sets them.
+% ------------------------------------------------------------------------------------------
+\newcounter{question}[chapter]
+% \question{Title}{Marks}
+\newcommand{\question}[2]{%
+  \par\addvspace{3.5ex plus 1ex}\needspace{6\baselineskip}%
+  \refstepcounter{question}%
+  \noindent{\large\bfseries{\color{accent}Question~\thequestion}\quad #1}%
+  \hfill\kindtag{#2 marks}\par\nopagebreak\vspace{0.8ex}\@afterindentfalse\@afterheading}
+% "mark" or "marks" after a number, which may be a half: 1 mark, 1.5 marks, 2 marks.
+\ExplSyntaxOn
+\cs_new:Npn \marksword #1 { \str_if_eq:nnTF {#1} {1} {mark} {marks} }
+\ExplSyntaxOff
+% \worth{N}: "(N marks)" at the right margin, on the part's last line if it fits.
+\newcommand{\worth}[1]{{\unskip\nobreak\hfil\penalty50\hskip1.5em\hbox{}\nobreak\hfill
+  \mbox{\small\itshape (#1~\marksword{#1})}\parfillskip=0pt\finalhyphendemerits=0\par}}
+% \qpart{a}: the lead-in of a lettered part of a question.
+\newcommand{\qpart}[1]{\par\addvspace{1.2ex}\noindent\textbf{(#1)}\enspace}
+% \credit{text}: a credit that is more than a number of marks ("2 marks; deduct 1 for ..."),
+% set flush right like \worth.
+\newcommand{\credit}[1]{{\unskip\nobreak\hfil\penalty50\hskip1.5em\hbox{}\nobreak\hfill
+  \mbox{\small\itshape (#1)}\parfillskip=0pt\finalhyphendemerits=0\par}}
+% \answersection{N}{Title}{Marks}: the heading of the answers to one question, set like the
+% paper's own \question one size up and numbered by the question it answers rather than by a
+% section counter; it is in the contents and the running head, and linkable as
+% \answerprefix:q:N, where each set of answers sets \answerprefix to its own.
+\newcommand{\answerprefix}{ans}
+\newcommand{\answersection}[3]{%
+  \par\addvspace{4.5ex plus 1ex}\needspace{8\baselineskip}%
+  \phantomsection\addcontentsline{toc}{section}{Question~#1: #2}%
+  \markright{Question~#1\enspace #2}%
+  \def\@currentlabel{#1}\label{\answerprefix:q:#1}%
+  \noindent{\Large\bfseries{\color{accent}Question~#1}\quad #2}\hfill\kindtag{#3 marks}\par
+  \nopagebreak\vspace{1.2ex}\@afterindentfalse\@afterheading}
+% \answerpart{a}{4}: the heading of the answer to one part, with what it is worth.
+\newcommand{\answerpart}[2]{%
+  \par\addvspace{2.2ex plus .6ex}\needspace{4\baselineskip}%
+  \noindent{\bfseries\color{accent}(#1)}\hfill\kindtag{#2~\marksword{#2}}%
+  \par\nopagebreak\vspace{0.5ex}\@afterindentfalse\@afterheading}
+
+% ------------------------------------------------------------------------------------------
+% Links. Coloured on screen, quiet enough to print.
+% ------------------------------------------------------------------------------------------
+\RequirePackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=accent2!80!black, urlcolor=accent2!80!black,
+  citecolor=accent2!80!black, pdfauthor={Erik Pihl},
+  pdftitle={Zephyr RTOS},
+  pdfsubject={Licensed under CC BY-NC-SA 4.0; its code may also be used under the MIT License}}
+\RequirePackage{bookmark}
+\pdfstringdefDisableCommands{\def\code#1{#1}\def\S{§}}
+
+\endinput

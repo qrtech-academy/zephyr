@@ -1,0 +1,50 @@
+% Section 3.2, from lectures/L03/README.md: the objectives, the evaluation
+% questions, and the next lecture.
+
+\section{Review}
+\label{c3:sec:review}
+
+\needspace{6\baselineskip}
+\subsection*{What you should be able to do now}
+After this chapter, you should:
+
+\begin{itemize}
+  \item Be able to create threads statically and dynamically, and choose their priorities.
+  \item Understand exactly when a cooperative and a preemptible thread can lose the CPU.
+  \item Be able to predict the order in which a set of threads runs.
+  \item Understand how timeouts are converted to ticks, and what that does to the length of a sleep.
+  \item Understand which context a timer’s expiry function runs in, and what may not be done there.
+  \item Be able to defer work from interrupt context to a work queue, and reschedule delayable work.
+  \item Understand what \code{native_sim} simulates faithfully about scheduling, and what it does not.
+  \item Be able to estimate a thread’s stack needs from static analysis.
+\end{itemize}
+
+\needspace{6\baselineskip}
+\subsection*{Questions to test yourself}
+You should be able to explain:
+
+\begin{enumerate}
+  \item When can a cooperative thread lose the CPU, and when can a preemptible one?
+  \item Why does \code{k_yield()} sometimes return at once, even though other threads are ready?
+  \item Why does \code{k_msleep(30)} return after 40 ms on a 100 Hz tick, while a 500 ms one-shot timer
+    fires at exactly 500 ms?
+  \item What must not be done in a timer’s expiry function, and why?
+  \item Why is the system work queue a cooperative thread, and what does that mean for the work items on it?
+  \item When would you use a work queue of your own rather than the system work queue?
+  \item Why does \code{while (!flag) \{\}} stall \code{native_sim} forever, when on a microcontroller it
+    would only waste power?
+  \item Why are Zephyr’s thread analyzer and stack overflow checks not available on \code{native_sim}?
+\end{enumerate}
+
+\needspace{6\baselineskip}
+\subsection*{Looking ahead}
+Chapter~\ref{c4:ch} is Kernel II, communication and application architecture:
+
+\begin{itemize}
+  \item Semaphores, mutexes, message queues and events.
+  \item Priority inversion, produced and then fixed.
+  \item zbus: publish and subscribe between parts of an application.
+  \item The State Machine Framework.
+\end{itemize}
+
+You will produce priority inversion on purpose, and measure what a mutex does about it.

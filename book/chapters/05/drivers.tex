@@ -1,0 +1,493 @@
+% Section 5.1, from lectures/L05/appendix/a_device_drivers.md.
+
+\section{Device Drivers}
+\label{c5:sec:devicedrivers}\label{c5:app:a}
+This section covers how Zephyr turns a devicetree node into a device, what a driver provides for it,
+and how a driver for a new part is packaged: binding, Kconfig option, and module. By the end you
+should be able to explain every file in \file{lectures/L05/examples/thermo/module}, and why each one
+is needed.
+
+\subsection{What a driver is, in Zephyr}
+Chapter~\ref{c2:ch} used devices without asking where they came from:
+\code{DEVICE_DT_GET(DT_ALIAS(led0))} returned a \code{const struct device *}, and the GPIO API did
+the rest. This chapter is the other side of that call.
+
+A Zephyr driver is three things:
+
+\begin{enumerate}
+  \item \textbf{A set of functions} that implement one of Zephyr’s device APIs, such as GPIO, I2C or sensor,
+    for one kind of part.
+  \item \textbf{An init function}, which the kernel calls once at boot to bring an instance of the part up.
+  \item \textbf{A macro expansion per devicetree node}, which creates a \code{struct device} for every node
+    that the driver serves, at compile time, with the node’s properties already filled in.
+\end{enumerate}
+
+There is no registration at run time and no probing. By the time the program links, every device
+exists as a constant in flash, and the only thing left to happen at boot is the init function.
+
+\subsection{\code{struct device}}
+Every device is a \code{struct device}, defined in \code{<zephyr/device.h>}. Its first five members
+are the ones a driver writer deals with:
+
+\begin{ccode}
+struct device {
+	const char *name;           /* The devicetree node's name, e.g. "thermo@48". */
+	const void *config;         /* Per-instance config: const, from devicetree. */
+	const void *api;            /* The function table: the driver's API struct. */
+	struct device_state *state; /* Owned by the kernel: init's state and result. */
+	void *data;                 /* Per-instance run-time data: mutable. */
+	/* ... */
+};
+\end{ccode}
+
+\noindent \textbf{\code{config} and \code{data} are the driver’s own types}, which the kernel stores
+as \code{void *}. The difference between them matters on a microcontroller:
+
+\begin{itemize}
+  \item \textbf{\code{config} is \code{const}.} It holds what the devicetree says about the instance: its
+    bus, its address, its properties. It is built at compile time and lives in flash.
+  \item \textbf{\code{data} is not.} It holds what changes at run time: the last reading, a mutex, a state
+    machine. It lives in RAM.
+\end{itemize}
+
+In \file{lectures/L05/examples/thermo/module/drivers/sensor/thermo/thermo.c} they are:
+
+\begin{ccode}
+struct thermo_config {
+	struct i2c_dt_spec i2c;
+	uint32_t conversion_timeout_ms;
+};
+
+struct thermo_data {
+	int16_t raw;
+};
+\end{ccode}
+
+\noindent and every driver function starts by getting them back out of the device:
+
+\begin{ccode}
+const struct thermo_config *config = dev->config;
+struct thermo_data *data = dev->data;
+\end{ccode}
+
+\noindent \textbf{The name is the node’s name}, \code{thermo@48}, not its label. That is what
+\code{dev->name} prints and what the logs show.
+
+\subsection{The API struct}
+Each kind of device has an API: a struct of function pointers declared by its subsystem. For the
+sensor subsystem it is \code{struct sensor_driver_api} in \code{<zephyr/drivers/sensor.h>}, whose
+two mandatory members are:
+
+\begin{ccode}
+sensor_sample_fetch_t sample_fetch;
+sensor_channel_get_t channel_get;
+\end{ccode}
+
+\noindent The functions an application calls, such as \code{sensor_sample_fetch(dev)}, are thin
+wrappers that cast \code{dev->api} and call through it:
+
+\begin{ccode}
+static inline int z_impl_sensor_sample_fetch(const struct device *dev)
+{
+	const struct sensor_driver_api *api =
+		(const struct sensor_driver_api *)dev->api;
+
+	return api->sample_fetch(dev, SENSOR_CHAN_ALL);
+}
+\end{ccode}
+
+A driver fills in its own table with \code{DEVICE_API()}:
+
+\begin{ccode}
+static DEVICE_API(sensor, thermo_api) = {
+	.sample_fetch = thermo_sample_fetch,
+	.channel_get = thermo_channel_get,
+};
+\end{ccode}
+
+\noindent \code{DEVICE_API(sensor, name)} declares a \code{const struct sensor_driver_api}, and also
+places it in a linker section of its own, one per API class. That lets \code{DEVICE_API_IS(sensor,
+dev)} check at run time whether a device really has a sensor API, rather than trusting whoever
+passed the pointer.
+
+This is Zephyr’s polymorphism: the application’s \code{sensor_sample_fetch()} works the same for
+Thermo, for a Bosch accelerometer, or for any of the hundreds of sensor drivers in the tree, and
+none of them knows about the others.
+
+\subsection{From devicetree node to device}
+
+\subsubsection{\code{DT_DRV_COMPAT} and instances}
+A driver serves every node with a given \code{compatible}, and says which one at the top of its
+file:
+
+\begin{ccode}
+#define DT_DRV_COMPAT qacademy_thermo
+\end{ccode}
+
+\noindent The value is the compatible \code{"qacademy,thermo"} in lowercase, with every character
+that cannot be in a C identifier turned into an underscore. From then on, the \code{DT_INST_...}
+macros count the \textbf{instances} of that compatible whose \code{status} is \code{okay}, numbered
+0, 1, 2, … in an order the build decides. \code{DT_INST_PROP(inst, conversion_timeout_ms)} is
+\code{DT_PROP()} for instance \code{inst}.
+
+\subsubsection{One device per instance}
+The driver writes a macro that defines everything for one instance, and expands it for all of them:
+
+\begin{ccode}
+#define THERMO_DEFINE(inst)                                                 \
+    static struct thermo_data thermo_data_##inst;                           \
+                                                                            \
+    static const struct thermo_config thermo_config_##inst = {              \
+        .i2c = I2C_DT_SPEC_INST_GET(inst),                                  \
+        .conversion_timeout_ms = DT_INST_PROP(inst, conversion_timeout_ms), \
+    };                                                                      \
+                                                                            \
+    SENSOR_DEVICE_DT_INST_DEFINE(inst, thermo_init, NULL,                   \
+                                 &thermo_data_##inst,                       \
+                                 &thermo_config_##inst, POST_KERNEL,        \
+                                 CONFIG_SENSOR_INIT_PRIORITY, &thermo_api);
+
+DT_INST_FOREACH_STATUS_OKAY(THERMO_DEFINE)
+\end{ccode}
+
+\noindent With two Thermo nodes in the devicetree, that is two \code{thermo_data}, two
+\code{thermo_config}, and two devices; with none, it is nothing at all.
+\code{I2C_DT_SPEC_INST_GET(inst)} fills in the bus device and the address from the node’s parent and
+its \code{reg} property.
+
+The device macro takes, in order:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{Argument} & \thead{Meaning} \\
+  \midrule
+  \code{inst} & The instance. The macro turns it into the node, and the node into the device’s name and symbol. \\
+  \code{thermo_init} & The init function. \\
+  \code{NULL} & Power management actions, which Thermo has none of. \\
+  \code{&thermo_data_\#\#inst} & \code{dev->data}. May be \code{NULL}. \\
+  \code{&thermo_config_\#\#inst} & \code{dev->config}. \\
+  \code{POST_KERNEL} & The init level. \\
+  \code{CONFIG_SENSOR_INIT_PRIORITY} & The priority within the level. \\
+  \code{&thermo_api} & \code{dev->api}. \\
+\end{booktable}
+
+\code{SENSOR_DEVICE_DT_INST_DEFINE()} is \code{DEVICE_DT_INST_DEFINE()} plus the sensor subsystem’s
+bookkeeping; other subsystems’ drivers use \code{DEVICE_DT_INST_DEFINE()} directly.
+
+\subsubsection{The symbol behind \code{DEVICE_DT_GET}}
+A device is a global variable named after the node’s position in the devicetree’s dependency order:
+\code{__device_dts_ord_32} is the device of the node with ordinal 32, and the ordinals are listed at
+the top of \code{build/zephyr/include/generated/zephyr/devicetree_generated.h}.
+\code{DEVICE_DT_GET(node)} is a reference to that variable.
+
+That explains the error Chapter~\ref{c2:ch} met, from the other side. \code{DEVICE_DT_GET()} of an
+enabled node that no driver defined a device for compiles, since the name is only a symbol, but the
+link fails:
+
+\begin{console}
+undefined reference to `__device_dts_ord_32'
+\end{console}
+
+\noindent The node exists; nothing defined its device. The causes are a driver that is not enabled,
+a driver whose \code{DT_DRV_COMPAT} does not match the node, or a module that is not in the build.
+In the Thermo example, removing the module from \code{CMakeLists.txt} does exactly that.
+
+\subsection{Initialization}
+
+\subsubsection{Levels and priorities}
+The kernel initializes devices in levels, in this order:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{Level} & \thead{When} \\
+  \midrule
+  \code{EARLY} & Right after entering C, before the kernel’s architecture-specific initialization. \\
+  \code{PRE_KERNEL_1}, \code{PRE_KERNEL_2} & Before the kernel’s services are available: no sleeping, no kernel objects. Interrupt controllers, clocks, the system timer, consoles. \\
+  \code{POST_KERNEL} & After the kernel is running. Most device drivers, since they may need to sleep or take a mutex. \\
+  \code{APPLICATION} & Just before \code{main()}. \\
+\end{booktable}
+
+Within a level, devices run in order of their \textbf{priority}, a number from 0 to 999, lowest
+first. Subsystems give their drivers a Kconfig option for it: I2C controllers use
+\code{CONFIG_I2C_INIT_PRIORITY}, which defaults to \code{CONFIG_KERNEL_INIT_PRIORITY_DEVICE} (50),
+and sensors use \code{CONFIG_SENSOR_INIT_PRIORITY} (90). A sensor on an I2C bus therefore
+initializes after the bus, which it needs.
+
+\textbf{The build checks that.} \code{CONFIG_CHECK_INIT_PRIORITIES}, on by default, compares the
+init order in the image with the dependencies in the devicetree, and fails the build if a device
+initializes before a device its node depends on, such as a sensor before its bus.
+
+To see the order, list the build’s init entries:
+
+\begin{shell}
+west build -t initlevels
+\end{shell}
+
+\noindent For the Chapter~\ref{c5:ch} exercises’ test application with two Lumo parts, the end of
+the list is:
+
+\begin{console}
+POST_KERNEL
+  __init_enable_logger: enable_logger(NULL)
+  __init___device_dts_ord_31: i2c_emul_init(__device_dts_ord_31)
+  __init___device_dts_ord_32: lumo_init(__device_dts_ord_32)
+  __init___device_dts_ord_33: lumo_init(__device_dts_ord_33)
+\end{console}
+
+\noindent The list is read from the image, so it also shows a device whose initialization is
+deferred (below), which the kernel then skips at boot.
+
+\subsubsection{The init function}
+An init function takes the device and returns 0 or a negative error number:
+
+\begin{ccode}
+static int thermo_init(const struct device *dev)
+{
+	const struct thermo_config *config = dev->config;
+	uint8_t id;
+	int ret;
+
+	if (!i2c_is_ready_dt(&config->i2c)) {
+		return -ENODEV;
+	}
+
+	ret = i2c_reg_read_byte_dt(&config->i2c, THERMO_REG_WHO_AM_I, &id);
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (id != THERMO_WHO_AM_I_VALUE) {
+		return -ENODEV;
+	}
+
+	return 0;
+}
+\end{ccode}
+
+\noindent What belongs in it: checking that the bus is ready, that the part answers, and that it is
+the part the devicetree says it is; and putting the part into the state the devicetree asks for.
+What does not: anything slow that a driver could do on first use instead. Every init function runs
+before \code{main()}, one after another.
+
+\subsubsection{\code{device_is_ready()}}
+The kernel records whether a device’s init function ran, and what it returned.
+\code{device_is_ready(dev)} is true only if both went well:
+
+\begin{ccode}
+return dev->state->initialized && (dev->state->init_res == 0U);
+\end{ccode}
+
+\noindent \textbf{A failed init is final.} Nothing retries it, and every call into the device’s API
+would talk to a part that is not there or not right. That is why every user of a device checks
+\code{device_is_ready()} once, before using it, and why a driver’s init must fail when the part is
+wrong rather than log a warning and carry on.
+
+\subsubsection{Deferred initialization}
+A node with the property \code{zephyr,deferred-init} is not initialized at boot. The application
+initializes it later, when it chooses, with \code{device_init(dev)}: for example once a power rail
+has been switched on. \code{device_init()} returns what the init function returned, or
+\code{-EALREADY} if the device was initialized before, \textbf{whether or not that went well}. The
+Thermo tests use exactly this to test a failing init: they break the emulated part, call
+\code{device_init()}, and get \code{-ENODEV}; a second call, after repairing the part, gets
+\code{-EALREADY}, and the device stays not ready.
+
+\subsection{A binding and a Kconfig option for a new part}
+
+\subsubsection{The binding}
+Chapter~\ref{c2:ch} wrote a binding for a node of the application’s own. A driver’s binding is the
+same kind of file, and says what a node for the part must look like:
+
+\begin{yamlcode}
+description: |
+  Thermo, a made-up I2C temperature sensor ...
+
+compatible: "qacademy,thermo"
+
+include: [sensor-device.yaml, i2c-device.yaml]
+
+properties:
+  conversion-timeout-ms:
+    type: int
+    default: 100
+\end{yamlcode}
+
+\noindent \code{i2c-device.yaml} is Zephyr’s common binding for a part on an I2C bus: it requires
+\code{reg}, the address, and makes the node valid only as a child of an I2C controller.
+\code{sensor-device.yaml} adds the properties every sensor may have. A property with an \code{enum:}
+list may only take one of the listed values, and \code{DT_INST_ENUM_IDX(inst, prop)} gives the index
+of the value the node chose, at compile time.
+
+\subsubsection{The vendor prefix}
+The part before the comma in a compatible is a \textbf{vendor prefix}, and Zephyr keeps a list of
+known ones in \code{dts/bindings/vendor-prefixes.txt}. A module can add its own, in a file of the
+same name:
+
+\begin{console}
+qacademy	QRTECH Academy
+\end{console}
+
+\noindent Without it, a normal build only warns, once per node:
+
+\begin{console}
+node '/i2c@100/lumo@29' compatible 'qacademy,lumo' has unknown vendor prefix 'qacademy'
+\end{console}
+
+\noindent \textbf{Twister turns that warning into an error.} It configures every build with
+\code{-DEXTRA_GEN_EDT_ARGS=--edtlib-Werror}, and the same message becomes a \code{devicetree error:}
+that stops the configuration. A module that builds fine by hand and fails under Twister has usually
+missed exactly this file.
+
+\subsubsection{The Kconfig option}
+Every driver has a Kconfig option that decides whether it is compiled:
+
+\begin{kconfigcode}
+config THERMO
+	bool "Thermo I2C temperature sensor"
+	default y
+	depends on SENSOR
+	depends on DT_HAS_QACADEMY_THERMO_ENABLED
+	select I2C
+\end{kconfigcode}
+
+\noindent \textbf{\code{DT_HAS_QACADEMY_THERMO_ENABLED} is generated from the devicetree.} For every
+compatible that has a binding, the build writes a symbol into \code{build/Kconfig/Kconfig.dts} that
+is \code{y} when at least one node with that compatible is enabled:
+
+\begin{console}
+DT_COMPAT_QACADEMY_LUMO := qacademy,lumo
+
+config DT_HAS_QACADEMY_LUMO_ENABLED
+	def_bool $(dt_compat_enabled,$(DT_COMPAT_QACADEMY_LUMO))
+\end{console}
+
+\noindent With \code{default y}, the driver is on exactly when the hardware is there, and nobody
+sets \code{CONFIG_THERMO} in a \code{prj.conf}. This is the pattern of nearly every driver in
+Zephyr, and the reason enabling a driver usually means adding a devicetree node rather than setting
+an option. The remaining dependencies are the subsystem the driver plugs into (\code{SENSOR}, which
+the application enables) and the bus it needs (\code{I2C}, which the driver selects).
+
+One consequence is easy to miss. A \code{default} that does not take is not an assignment, so
+nothing warns about it: an application with a Thermo node but without \code{CONFIG_SENSOR=y} builds
+its devicetree, leaves \code{THERMO} off, and fails at link time with \code{undefined reference to
+'__device_dts_ord_32'}.
+
+\subsection{The sensor API}
+
+\subsubsection{Fetch and get}
+Reading a sensor takes two calls:
+
+\begin{ccode}
+ret = sensor_sample_fetch(dev);
+ret = sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &value);
+\end{ccode}
+
+\noindent \textbf{\code{sample_fetch} talks to the part}: it starts a measurement if the part needs
+one, reads the raw result, and stores it in \code{dev->data}. It can fail, and it can take time.
+\code{sensor_sample_fetch(dev)} fetches every channel the part has (\code{SENSOR_CHAN_ALL}), and
+\code{sensor_sample_fetch_chan(dev, chan)} only one.
+
+\textbf{\code{channel_get} only converts} the stored result into the channel’s unit. It does no I/O,
+and it returns the same value every time until the next fetch. The split lets a part that measures
+several things at once, such as an accelerometer’s three axes, be read in one bus transaction and
+then converted channel by channel. Both return \code{-ENOTSUP} for a channel the part does not have.
+
+\subsubsection{\code{struct sensor_value}}
+A reading is a fixed-point number in two parts:
+
+\begin{ccode}
+struct sensor_value {
+	int32_t val1;   /* Integer part. */
+	int32_t val2;   /* Fractional part, in millionths. */
+};
+\end{ccode}
+
+\noindent Each channel has a unit: degrees Celsius for \code{SENSOR_CHAN_AMBIENT_TEMP}, lux for
+\code{SENSOR_CHAN_LIGHT}. \textbf{Both parts carry the sign}: -1.5 degrees is \code{val1 = -1, val2
+= -500000}, and -0.5 degrees is \code{val1 = 0, val2 = -500000}. A driver should not assemble the
+two parts by hand;
+\code{sensor_value_from_micro(&value, micro)} does it from a value in millionths, and
+\code{sensor_value_to_micro(&value)} converts back. Work in \code{int64_t} millionths: a 16-bit count times
+250000 millionths per count does not fit in 32 bits.
+
+\subsubsection{The newer, asynchronous API}
+Zephyr also has an asynchronous sensor API (\code{CONFIG_SENSOR_ASYNC_API}), built on RTIO, in which
+a driver provides \code{submit} and \code{get_decoder} instead, and readings are decoded into Q31
+fixed-point values. It suits high-rate and streaming sensors. The fetch and get API is what most
+existing drivers implement, and what this book uses; Q31 values reappear in \secref{c5:app:b}, in
+the emulator backend.
+
+\subsection{Zephyr modules}
+
+\subsubsection{Out of tree}
+A driver for a part that Zephyr does not support does not have to live in Zephyr. A \textbf{module}
+is a directory that the build treats as an extension of Zephyr: its CMake is included into Zephyr’s
+build, its Kconfig into Zephyr’s configuration, and its bindings into the devicetree search path.
+Vendor HALs, mbedTLS and LVGL are all modules; so is \code{examples/thermo/module}.
+
+What makes a directory a module is one file, \code{zephyr/module.yml}:
+
+\begin{yamlcode}
+name: qacademy-thermo
+build:
+  cmake: .
+  kconfig: Kconfig
+  settings:
+    dts_root: .
+\end{yamlcode}
+
+\begin{booktable}{@{}lL@{}}
+  \thead{Key} & \thead{Meaning} \\
+  \midrule
+  \code{name} & The module’s name. The build also defines a Kconfig symbol for it: \code{CONFIG_ZEPHYR_QACADEMY_THERMO_MODULE=y}. \\
+  \code{build: cmake} & The directory whose \code{CMakeLists.txt} the build includes. \\
+  \code{build: kconfig} & The Kconfig file the build sources. \\
+  \code{settings: dts_root} & A directory whose \code{dts/bindings/} holds bindings, and whose \code{dts/bindings/vendor-prefixes.txt} holds vendor prefixes. \\
+\end{booktable}
+
+The module’s \code{CMakeLists.txt} is included after Kconfig has run, so it compiles the driver only
+when the driver is enabled:
+
+\begin{cmakecode}
+add_subdirectory_ifdef(CONFIG_THERMO drivers/sensor/thermo)
+\end{cmakecode}
+
+\noindent and the driver’s own \code{CMakeLists.txt} makes it a library of the Zephyr image, as
+in-tree drivers do:
+
+\begin{cmakecode}
+zephyr_library()
+zephyr_library_sources(thermo.c)
+\end{cmakecode}
+
+\subsubsection{Adding a module to a build}
+In a west workspace, the modules are the projects of the manifest, as \secref{c1:app:b} described. A
+module that is not a west project is added by path, in \code{ZEPHYR_EXTRA_MODULES}, before
+\code{find_package(Zephyr)}:
+
+\begin{cmakecode}
+list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/../module)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+\end{cmakecode}
+
+\noindent or on the command line, as \code{-DZEPHYR_EXTRA_MODULES=<path>}. The build merges the two,
+so an application can name the modules it always needs in its \code{CMakeLists.txt}, and a test can
+add another, such as an emulator, from outside.
+
+\subsection{Summary}
+\begin{itemize}
+  \item A driver is an API implementation, an init function, and a macro expanded once for every enabled
+    devicetree node of its compatible.
+  \item A device’s \code{config} is \code{const}, from devicetree, in flash; its \code{data} changes at run
+    time, in RAM.
+  \item \code{DT_DRV_COMPAT} names the compatible; \code{DT_INST_FOREACH_STATUS_OKAY()} and
+    \code{DEVICE_DT_INST_DEFINE()} make one device per instance.
+  \item \code{undefined reference to '__device_dts_ord_N'} means a node that no driver made a device for.
+  \item Devices initialize by level, then by priority. \code{west build -t initlevels} shows the order, and
+    the build checks it against the devicetree.
+  \item A failed init is final: \code{device_is_ready()} is false from then on. \code{zephyr,deferred-init}
+    and \code{device_init()} move init to a moment the application chooses.
+  \item A new part needs a binding, a vendor prefix, and a Kconfig option that depends on
+    \code{DT_HAS_<COMPAT>_ENABLED}, so that the devicetree node alone enables the driver.
+  \item The sensor API splits I/O (\code{sample_fetch}) from conversion (\code{channel_get}), and returns
+    fixed-point \code{sensor_value}s whose two parts both carry the sign.
+  \item A module packages drivers, bindings and Kconfig outside Zephyr, and is added to a build with
+    \code{ZEPHYR_EXTRA_MODULES} or a west manifest.
+\end{itemize}

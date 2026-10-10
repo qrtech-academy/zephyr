@@ -1,0 +1,420 @@
+% Section 2.3, from lectures/L02/appendix/b_exercises.md.
+
+\section{Exercises}
+\label{c2:sec:exercises}\label{c2:app:b}
+These exercises reinforce the concepts from \secref{c2:app:a}.
+
+\begin{aside}
+\textbf{How to check your work.} Write each exercise set as its own application under
+\file{lectures/L02/exercises}, with the file names given there, and run \code{make test} from the
+repository root. A set’s tests switch on as soon as its files exist, and a set you have not started
+is reported as \code{SKIP}. Each application grows through its set, and the tests check where it
+ends up. Every set is built twice: once as you wrote it, and once with an extra overlay from the
+test suite merged on top, which moves pins, turns polarities around, and adds or removes nodes. A
+program that takes its hardware from the devicetree prints the second expected output without a
+change; a program with a pin number or a polarity written into its C code does not.
+
+The solutions are published in the companion repository, under
+\file{lectures/L02/appendix/solutions}, a few days after the lecture. Try each exercise yourself
+before you read them.
+\end{aside}
+
+Remember \code{source env.sh} in every new terminal. Build and run an exercise from the repository
+root:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L02/exercises/exercise1
+west build -t run
+\end{shell}
+
+\noindent To build with the same extra overlay as the tests, from the repository root:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L02/exercises/exercise1 -- \
+    -DEXTRA_DTC_OVERLAY_FILE=$PWD/lectures/L02/exercises/test/exercise1-extra.overlay
+\end{shell}
+
+\noindent Print with \code{printk()} in every set, so that the output has no timestamps other than
+the ones the exercise asks for.
+
+% ---------------------------------------------------------------------
+\exerciseset{The board’s LED}
+\label{c2:set:1}
+Create an application named \code{exercise1} to work in for this exercise set, with a
+\code{CMakeLists.txt} and \code{src/main.c} as in Chapter~\ref{c1:ch}, and a \code{prj.conf} that
+enables GPIO (\code{CONFIG_GPIO=y}).
+
+\exercise{Finding the LED}{Code}
+\label{c2:ex:1.1}
+In this exercise you will get the board’s LED from the devicetree.
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{main.c}, get a \code{struct gpio_dt_spec} for the \code{gpios} property of the node with
+    the alias \code{led0}, at file scope.
+  \item In \code{main()}, check that the LED’s controller is ready. If it is not, print \code{GPIO
+    controller <name> is not ready} and return.
+  \item Print the LED’s pin, its controller’s name, and whether it is active high or active low, from the
+    spec’s flags:
+\begin{console}
+LED: pin 0 on gpio_emul, active high
+\end{console}
+  \item Configure the pin as an output, initially inactive.
+\end{itemize}
+
+\task{Reflection}
+\begin{itemize}
+  \item Find \code{led0} in \code{deps/zephyr/boards/native/native_sim/native_sim.dts}. Which line is the
+    alias, and which is the label? Which of the two did your code use?
+  \item Where does the name \code{gpio_emul} come from?
+  \item What would the same program print on a board whose \code{led0} is declared
+\code{<&gpio1 5 GPIO_ACTIVE_LOW>}, and what in your code would change?
+\end{itemize}
+
+\exercise{Blinking as the devicetree says}{Code}
+\label{c2:ex:1.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item Create \code{app.overlay} in \code{exercise1}, adding a \code{zephyr,user} node under the root with
+    two properties:
+\begin{itemize}
+  \item \code{blink-ms = <200 300>;}: how long the LED is on, and then off, in milliseconds.
+  \item \code{blinks = <3>;}: how many times to blink.
+\end{itemize}
+  \item In \code{main.c}, read \code{blink-ms} into a \code{static const int} array at file scope, and use
+    \code{blinks} directly where you need it.
+  \item After configuring the pin, blink the LED \code{blinks} times. For each blink:
+\begin{itemize}
+  \item Turn the LED on with \code{gpio_pin_set_dt()}, print \code{LED on, pin <level> at <uptime> ms}, and
+    sleep for the on time.
+  \item Turn the LED off, print \code{LED off, pin <level> at <uptime> ms}, and sleep for the off time.
+\end{itemize}
+\code{<level>} is \code{high} or \code{low}: what the emulated controller is driving on the pin,
+from \code{gpio_emul_output_get()} in \code{<zephyr/drivers/gpio/gpio_emul.h>}.
+  \item Finally print \code{Done after <blinks> blinks}.
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+LED: pin 0 on gpio_emul, active high
+LED on, pin high at 0 ms
+LED off, pin low at 210 ms
+LED on, pin high at 520 ms
+LED off, pin low at 730 ms
+LED on, pin high at 1040 ms
+LED off, pin low at 1250 ms
+Done after 3 blinks
+\end{console}
+
+\noindent The tests build the application a second time with
+\file{lectures/L02/exercises/test/exercise1-extra.overlay}, which points \code{led0} at a new,
+active-low LED on pin 5, and blinks it twice, for 50 and 150 ms. The output must then be:
+
+\begin{console}
+LED: pin 5 on gpio_emul, active low
+LED on, pin low at 0 ms
+LED off, pin high at 60 ms
+LED on, pin low at 220 ms
+LED off, pin high at 280 ms
+Done after 2 blinks
+\end{console}
+
+\noindent \textbf{Hint:} \code{DT_PATH(zephyr_user)} is the node identifier of \code{/zephyr,user}.
+An array property is an initializer: \code{static const int blink_ms[] = DT_PROP(node, blink_ms);}.
+
+\task{Reflection}
+\begin{itemize}
+  \item You wrote no binding for \code{zephyr,user}. How did the build know the types of its properties?
+  \item Remove \code{blinks} from the overlay and build. Explain the error. Then make the program blink once
+    when \code{blinks} is missing, without adding it back.
+  \item In the second build, the LED is \emph{on} while the pin is \emph{low}. Which line of your code
+    decided that, and why did it not need to change?
+  \item In the second build, find \code{blink-ms} in \code{build/zephyr/zephyr.dts}. How does the file say
+    which overlay the value came from, and why is it not \code{app.overlay}, which also sets it?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{A button of your own}
+\label{c2:set:2}
+Create an application named \code{exercise2} to work in for this exercise set, with the same
+\code{CMakeLists.txt} and \code{prj.conf} as \code{exercise1}.
+
+\exercise{Describing the hardware}{Code}
+\label{c2:ex:2.1}
+In this exercise you will add hardware the board does not have, with an overlay.
+
+\task{Tasks}
+Create \code{app.overlay} in \code{exercise2}, which adds:
+
+\begin{itemize}
+  \item A second LED, as a child of the board’s existing \code{leds} node: pin 2 of \code{gpio0}, active
+    high, with the node label \code{led1}.
+  \item A node named \code{buttons} under the root, with \code{compatible = "gpio-keys"}, holding one
+    button: pin 1 of \code{gpio0}, active low with a pull-up, with the node label \code{button0}.
+  \item The aliases \code{led1} for the new LED and \code{sw0} for the button.
+\end{itemize}
+
+Use exactly these node labels: the test suite’s overlay refers to them.
+
+\task{Reflection}
+\begin{itemize}
+  \item Why does the new LED need no \code{compatible} property of its own?
+  \item Build the application and open \code{build/zephyr/zephyr.dts}. What are the button’s flags, in hex,
+    and how are they made up?
+\end{itemize}
+
+\exercise{The callback}{Code}
+\label{c2:ex:2.2}
+
+\task{Tasks}
+In \code{main.c}:
+
+\begin{itemize}
+  \item Get \code{gpio_dt_spec}s for the aliases \code{led1} and \code{sw0}, and check that both are ready.
+  \item Print \code{Button on pin <pin>, LED 1 on pin <pin>}.
+  \item Configure LED 1 as an output, initially inactive, and the button as an input.
+  \item Configure an interrupt on the button for when it becomes \textbf{active}, and add a callback for it.
+  \item In the callback, count the press, toggle a \code{bool} that says whether LED 1 is on, set LED 1 with
+    \code{gpio_pin_set_dt()}, and print:
+\begin{console}
+Press <count> at <uptime> ms, LED 1 <on|off>, pin <high|low>
+\end{console}
+where the pin’s level is read back with \code{gpio_emul_output_get()}.
+\end{itemize}
+
+\exercise{The finger}{Code}
+\label{c2:ex:2.3}
+
+\task{Tasks}
+Nobody can press an emulated button, so \code{main()} does it:
+
+\begin{itemize}
+  \item Write a function \code{static void press(bool pressed)} that sets the button’s input with
+    \code{gpio_emul_input_set()}. It takes whether the button is pressed, and must work out the
+    \textbf{level on the pin} from the button’s flags.
+  \item After setting up the callback, \code{main()} presses the button three times. Before each press it
+    sleeps for the next value of \code{static const int gap_ms[] = \{100, 200, 200\};}, then presses,
+    sleeps 50 ms, and releases.
+  \item Finally print \code{<count> presses counted}.
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+Button on pin 1, LED 1 on pin 2
+Press 1 at 110 ms, LED 1 on, pin high
+Press 2 at 380 ms, LED 1 off, pin low
+Press 3 at 650 ms, LED 1 on, pin high
+3 presses counted
+\end{console}
+
+\noindent The second build merges \file{lectures/L02/exercises/test/exercise2-extra.overlay}, which
+moves the button to pin 7 as an active-high button with a pull-down, and LED 1 to pin 3 as an
+active-low LED. The output must then be:
+
+\begin{console}
+Button on pin 7, LED 1 on pin 3
+Press 1 at 110 ms, LED 1 on, pin low
+Press 2 at 380 ms, LED 1 off, pin high
+Press 3 at 650 ms, LED 1 on, pin low
+3 presses counted
+\end{console}
+
+\noindent \textbf{Hint:} An active-low button is pressed when its pin is low.
+
+\task{Reflection}
+\begin{itemize}
+  \item Make \code{press()} always drive the pin low for a press, and run the second build. At what times
+    are the presses counted now, and why?
+  \item Print \code{k_is_in_isr()} in the callback. What does it print, and what would the same callback run
+    in on a microcontroller? What does that forbid in the callback?
+  \item Nothing happens when the finger releases the button. Why not?
+  \item The button’s input level is high before the first press, although nothing in your code set it. What
+    did?
+  \item Build with \code{-DDTC_OVERLAY_FILE=} and the path to \code{exercise2-extra.overlay}, instead of
+    \code{-DEXTRA_DTC_OVERLAY_FILE=}. What happens, and why?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{A binding of your own}
+\label{c2:set:3}
+Create an application named \code{exercise3} to work in for this exercise set, with the same
+\code{CMakeLists.txt} and \code{prj.conf} as \code{exercise1}.
+
+\exercise{The binding}{Code}
+\label{c2:ex:3.1}
+In this exercise you will define a kind of node of your own.
+
+\task{Tasks}
+Create \code{dts/bindings/qacademy,alarm.yaml} in \code{exercise3}: a binding for the compatible
+\code{qacademy,alarm}, a temperature alarm with an LED, which includes \code{base.yaml} and has
+these properties:
+
+\begin{booktable}{@{}lllL@{}}
+  \thead{Property} & \thead{Type} & \thead{Required} & \thead{Meaning} \\
+  \midrule
+  \code{alarm-name} & string & yes & Human-readable name. \\
+  \code{threshold} & int & yes & The temperature, in degrees Celsius, at which the alarm goes on. \\
+  \code{hysteresis} & int & no, default 2 & How many degrees below the threshold the temperature must fall before the alarm goes off. \\
+  \code{severity} & string & yes & One of \code{info}, \code{warning} or \code{critical}, in that order. \\
+  \code{led-gpios} & phandle-array & yes & The LED that shows the alarm. \\
+\end{booktable}
+
+Create \code{dts/bindings/vendor-prefixes.txt}, registering the vendor prefix \code{qacademy} (the
+prefix, a tab, and a vendor name).
+
+\exercise{The alarms}{Code}
+\label{c2:ex:3.2}
+
+\task{Tasks}
+Create \code{app.overlay} in \code{exercise3}, adding three nodes under the root, in this order.
+Every alarm's LED is on \code{gpio0} and active high, and \code{alarm-fan} is the only node with
+\code{status = "disabled"}:
+
+\begin{narrowtable}{@{}lllllll@{}}
+  \thead{Node name} & \thead{Label} & \thead{\code{alarm-name}} & \thead{\code{threshold}} &
+    \thead{\code{hysteresis}} & \thead{\code{severity}} & \thead{LED pin} \\
+  \midrule
+  \code{alarm-overheat} & \code{overheat} & \code{Overheat} & 70 & not set & \code{critical} & 10 \\
+  \code{alarm-warm} & \code{warm} & \code{Warm} & 45 & 5 & \code{warning} & 11 \\
+  \code{alarm-fan} & \code{fan} & \code{Fan} & 25 & not set & \code{info} & 12 \\
+\end{narrowtable}
+
+\task{Reflection}
+\begin{itemize}
+  \item Remove \code{severity} from one node and build. Then set it to \code{"fatal"} and build. Which step
+    of the build reports each error, and has any C been compiled yet?
+  \item Delete \code{vendor-prefixes.txt} and build. What changes?
+\end{itemize}
+
+\exercise{The table}{Code}
+\label{c2:ex:3.3}
+
+\task{Tasks}
+In \code{main.c}:
+
+\begin{itemize}
+  \item Define a \code{struct alarm} holding the name, threshold, hysteresis, severity (as an \code{int}), a
+    \code{struct gpio_dt_spec} for the LED, and a \code{bool} saying whether the alarm is on.
+  \item Build an array of them, \code{alarms}, with \textbf{one entry for each enabled \code{qacademy,alarm}
+    node}, using \code{DT_FOREACH_STATUS_OKAY()}. Store the severity as its index in the binding’s
+    \code{enum}, and keep a table of the names \code{"info"}, \code{"warning"} and \code{"critical"} to
+    print it.
+  \item Print \code{<count> alarms}, and then, for each alarm:
+\begin{console}
+<name>: <severity> at <threshold> C, hysteresis <hysteresis>, LED pin <pin>
+\end{console}
+and configure its LED as an output, initially inactive.
+  \item Go through the readings \code{static const int readings[] = \{20, 50, 42, 75, 66, 30\};}. For each,
+    print \code{Reading <t> C}, and then for each alarm, in table order:
+\begin{itemize}
+  \item An alarm that is off goes on if the reading is at or above its threshold.
+  \item An alarm that is on goes off if the reading is below its threshold minus its hysteresis.
+  \item When an alarm changes, set its LED, and print, indented by two spaces:
+\begin{console}
+  <name> (<severity>) <on|off>, pin <pin> <high|low>
+\end{console}
+\end{itemize}
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+2 alarms
+Overheat: critical at 70 C, hysteresis 2, LED pin 10
+Warm: warning at 45 C, hysteresis 5, LED pin 11
+Reading 20 C
+Reading 50 C
+  Warm (warning) on, pin 11 high
+Reading 42 C
+Reading 75 C
+  Overheat (critical) on, pin 10 high
+Reading 66 C
+  Overheat (critical) off, pin 10 low
+Reading 30 C
+  Warm (warning) off, pin 11 low
+\end{console}
+
+\noindent The second build merges \file{lectures/L02/exercises/test/exercise3-extra.overlay}, which
+deletes the \code{warm} node, enables \code{fan}, and changes \code{overheat}’s threshold to 60 and
+hysteresis to 10. The output must then be:
+
+\begin{console}
+2 alarms
+Overheat: critical at 60 C, hysteresis 10, LED pin 10
+Fan: info at 25 C, hysteresis 2, LED pin 12
+Reading 20 C
+Reading 50 C
+  Fan (info) on, pin 12 high
+Reading 42 C
+Reading 75 C
+  Overheat (critical) on, pin 10 high
+Reading 66 C
+Reading 30 C
+  Overheat (critical) off, pin 10 low
+\end{console}
+
+\noindent \textbf{Hint:} \code{DT_ENUM_IDX(node_id, severity)} is the index of the node’s
+\code{severity} in the binding’s \code{enum}. The compatible, written as a C token, is
+\code{qacademy_alarm}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Overheat’s hysteresis is 2, although its node does not set it. Where does the 2 come from, and what
+    would happen without it in the binding?
+  \item In what order are the alarms in the table? Find the list in
+    \code{build/zephyr/include/generated/zephyr/devicetree_generated.h}. Can a program rely on that
+    order?
+  \item \code{alarm-fan} is disabled in the first build. Which instance number does it have, and does
+    \code{DT_NODE_EXISTS(DT_NODELABEL(fan))} give 1 or 0?
+  \item Add \code{BUILD_ASSERT(DT_PROP(DT_NODELABEL(warm), hysteresis) == 5);} to \code{main.c}, and run the
+    second build. What happens, and why is the error not an assertion failure?
+  \item The table is not \code{const}, because each alarm’s \code{active} changes. Which fields could be
+    \code{const}, and how would you split the struct so that they are?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Reading the devicetree}
+\label{c2:set:4}
+No code in this set: answer the questions by looking. Build \code{exercise1} and \code{exercise2}
+into separate build directories first, e.g. with \code{-d build/exercise1} and \code{-d
+build/exercise2}.
+
+\exercise[fillaccent2]{The merged tree}{Reflection}
+\label{c2:ex:4.1}
+
+\task{Tasks}
+Answer, using \code{zephyr.dts} in the \code{exercise2} build:
+
+\begin{itemize}
+  \item Which file and line defined the alias \code{sw0}? And the alias \code{led0}?
+  \item What does \code{/chosen} say the console is, and what is the node’s compatible?
+\end{itemize}
+
+\exercise[fillaccent2]{The generated header}{Reflection}
+\label{c2:ex:4.2}
+
+\task{Tasks}
+Answer, using \code{devicetree_generated.h}:
+
+\begin{itemize}
+  \item What is the node identifier of the button in \code{exercise2}, and what does \code{DT_ALIAS(sw0)}
+    expand to, step by step?
+  \item What is the ordinal of \code{/gpio_emul} in the \code{exercise1} build, and in the \code{exercise2}
+    build? Why can they differ?
+  \item Which ordinals does the button’s node depend on directly, and why those?
+\end{itemize}
+
+\exercise[fillaccent2]{Two errors, one number}{Reflection}
+\label{c2:ex:4.3}
+
+\task{Tasks}
+\begin{itemize}
+  \item Build \code{exercise1} with \code{-DEXTRA_DTC_OVERLAY_FILE=} and the path to
+    \code{lectures/L02/examples/blinky/broken.overlay}. Which error do you get, and which node does its
+    number name?
+  \item Build \code{exercise1} with \code{-DCONFIG_GPIO=n} instead. Which error do you get now, and what is
+    the difference in what went wrong?
+\end{itemize}

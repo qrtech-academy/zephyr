@@ -1,0 +1,39 @@
+% Chapter 6, typeset from lectures/L06: the README is the opener and the closing
+% review, and each appendix is a section, in the same order and with the same subsections.
+
+\chapter{Subsystems and Debugging}
+\label{c6:ch:subsystems}\label{c6:ch}
+
+{\large\itshape Making a program talk back, remember things, and crash usefully.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item The shell: built-in commands, commands of your own with subcommands and arguments, and changing log
+    levels at run time.
+  \item The settings subsystem: key-value pairs that survive a restart, stored with ZMS on flash.
+  \item \code{native_sim}’s simulated flash: a file, and the command-line options that control it.
+  \item Networking on \code{native_sim} through offloaded sockets: Zephyr’s socket API on the host’s
+    sockets.
+  \item Fatal errors: \code{k_oops()}, \code{k_panic()}, assertions, and \code{k_sys_fatal_error_handler()}.
+  \item The host’s tools on a Zephyr program: AddressSanitizer and UndefinedBehaviorSanitizer.
+  \item Debugging a \code{native_sim} program with GDB.
+  \item Code coverage with gcov and Twister.
+  \item What moving to real hardware would change, and what it would not.
+\end{itemize}
+\end{chapterbox}
+
+This last chapter is about the parts of Zephyr that make a program usable by someone other than its
+author. A shell, so a running system can be asked what it is doing. Settings that survive a restart,
+on the flash that \code{native_sim} keeps in a file. Sockets, which on this board are the host's
+own, so a Zephyr program can be talked to from an ordinary terminal.
+
+Then it is about what to do when the program is wrong. Zephyr's fatal error handling decides what an
+impossible value costs, and the host's tools, AddressSanitizer, UndefinedBehaviorSanitizer, GDB and
+gcov, work on a \code{native_sim} program exactly as on any other Linux program. That is the best
+argument this book has for keeping code runnable on \code{native_sim} even when the product is a
+board.
+
+\input{chapters/06/subsystems}
+\input{chapters/06/debugging}
+\input{chapters/06/summary}
+\input{chapters/06/exercises}

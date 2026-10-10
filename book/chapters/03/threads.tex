@@ -1,0 +1,512 @@
+% Section 3.1, from lectures/L03/appendix/a_threads_and_time.md.
+
+\section{Threads, Time and Work Queues}
+\label{c3:sec:threadstimeandwork}\label{c3:app:a}
+This section covers the part of the kernel that decides what runs when: threads and their
+priorities, the scheduler’s rules, time and timeouts, kernel timers, interrupt context, and work
+queues. It ends with the two places where \code{native_sim} behaves differently from a
+microcontroller: code that spins, and stacks. By the end you should be able to predict, line by
+line, the traces of the \code{threads} and \code{timer_work} examples, and explain why
+\code{busy_loop} never finishes. All four of this chapter's examples are in
+\file{lectures/L03/examples}.
+
+If you have taken \textbf{Real-Time Kernel Design}, you have built everything below yourself.
+Zephyr’s version has more features and different names, but the same shape.
+
+\subsection{Threads}
+
+\subsubsection{What a thread is}
+A Zephyr thread is:
+
+\begin{itemize}
+  \item an \textbf{entry function}, \code{void entry(void *p1, void *p2, void *p3)}, with three arguments of
+    the caller’s choosing;
+  \item a \textbf{stack} of its own, whose size is fixed when the thread is defined;
+  \item a \textbf{\code{struct k_thread}}, the kernel’s bookkeeping: saved registers, state, priority, name;
+  \item a \textbf{priority}, and a few \textbf{options}.
+\end{itemize}
+
+Returning from the entry function ends the thread. There is no process around it and no memory
+protection between threads on most targets: every thread sees the same global variables.
+
+\subsubsection{Creating a thread at build time}
+Most threads in an embedded application exist for the whole of its life, and are best defined
+statically:
+
+\begin{ccode}
+K_THREAD_DEFINE(sensor, 1024, sensor_entry, NULL, NULL, NULL, 3, 0, 0);
+\end{ccode}
+
+\noindent The arguments are the thread’s name, its stack size in bytes, the entry function and its
+three arguments, the priority, the options, and a \textbf{start delay} in milliseconds.
+\code{K_THREAD_DEFINE()} allocates the stack and the \code{struct k_thread} at compile time; nothing
+is allocated at run time. The name becomes both a C identifier, \code{sensor}, of type
+\code{k_tid_t}, and the thread’s name for \code{k_thread_name_get()} when
+\code{CONFIG_THREAD_NAME=y}.
+
+Statically defined threads are started by the kernel \textbf{after every \code{APPLICATION}-level
+initialization and immediately before \code{main()} is called}, in the \code{main} thread
+(\code{z_init_static_threads()} in \code{deps/zephyr/kernel/init.c}). It starts them with the
+scheduler locked, so that none of them runs until all of them have been started, and then unlocks
+it. From that moment, the scheduler’s ordinary rules decide who runs first, \code{main} included.
+
+A delay of \code{K_FOREVER} instead of a number creates the thread without starting it;
+\code{k_thread_start()} starts it later.
+
+\subsubsection{Creating a thread at run time}
+A thread whose existence depends on run-time conditions is created with \code{k_thread_create()}.
+Its stack must still be allocated, usually statically:
+
+\begin{ccode}
+K_THREAD_STACK_DEFINE(worker_stack, 1024);
+static struct k_thread worker_thread;
+
+k_tid_t tid = k_thread_create(&worker_thread, worker_stack, K_THREAD_STACK_SIZEOF(worker_stack),
+                              worker_entry, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+k_thread_name_set(tid, "worker");
+\end{ccode}
+
+\noindent Use \code{K_THREAD_STACK_DEFINE()} and \code{K_THREAD_STACK_SIZEOF()} rather than a
+\code{char} array and \code{sizeof}: on some targets a thread stack needs guard areas and alignment
+that the macros add. \code{k_thread_join()} waits for a thread to end, and \code{k_thread_abort()}
+ends one from outside.
+
+\subsubsection{Thread states}
+At any moment a thread is in one of these states (the flags are in
+\code{deps/zephyr/include/zephyr/kernel_structs.h}):
+
+\begin{booktable}{@{}lL@{}}
+  \thead{State} & \thead{Meaning} \\
+  \midrule
+  \textbf{Ready} & Could run, and is waiting for the scheduler to pick it. \\
+  \textbf{Running} & Has the CPU. One thread per CPU. \\
+  \textbf{Pending} & Waiting for a kernel object: a semaphore, a queue, a mutex, a timer’s status. \\
+  \textbf{Sleeping} & Waiting for time to pass, in \code{k_sleep()} and its relatives. \\
+  \textbf{Suspended} & Stopped by \code{k_thread_suspend()} until \code{k_thread_resume()}. \\
+  \textbf{Dead} & Returned from its entry function, or aborted. \\
+\end{booktable}
+
+Pending and sleeping threads are together called \textbf{blocked}. The scheduler only ever chooses
+among ready threads.
+
+\subsection{Priorities}
+Every thread has an integer priority, and \textbf{a lower number is a higher priority}. The range is
+split in two:
+
+\begin{booktable}{@{}llL@{}}
+  \thead{Priorities} & \thead{Kind} & \thead{Defaults} \\
+  \midrule
+  -16 to -1 & \textbf{Cooperative} & \code{CONFIG_NUM_COOP_PRIORITIES=16}. \code{K_PRIO_COOP(0)} is -16, \code{K_PRIO_COOP(15)} is -1. \\
+  0 to 14 & \textbf{Preemptible} & \code{CONFIG_NUM_PREEMPT_PRIORITIES=15}. \code{K_PRIO_PREEMPT(x)} is \code{x}. \\
+  15 & The idle thread & \code{K_IDLE_PRIO}, lower than any application thread. \\
+\end{booktable}
+
+The difference between the two kinds is the most important thing in this chapter:
+
+\begin{itemize}
+  \item A \textbf{cooperative} thread, once running, keeps the CPU until it gives it up itself: by blocking,
+    sleeping, yielding or returning. Not even a cooperative thread of higher priority can take it.
+  \item A \textbf{preemptible} thread loses the CPU the moment a thread of \textbf{higher} priority becomes
+    ready.
+\end{itemize}
+
+Interrupts are not threads, and interrupt every thread, cooperative or not. What a cooperative
+thread is protected from is other \emph{threads} running before it gives up the CPU, even if an
+interrupt made them ready.
+
+A few threads have priorities worth knowing:
+
+\begin{booktable}{@{}LlL@{}}
+  \thead{Thread} & \thead{Priority} & \thead{Set by} \\
+  \midrule
+  \code{main} & 0 & \code{CONFIG_MAIN_THREAD_PRIORITY} \\
+  The system work queue, \code{sysworkq} & -1 & \code{CONFIG_SYSTEM_WORKQUEUE_PRIORITY} \\
+  Idle & 15 & \code{K_IDLE_PRIO} \\
+\end{booktable}
+
+\code{k_thread_priority_set()} changes a thread’s priority at run time.
+
+\textbf{Meta-IRQ priorities} are the highest cooperative priorities, reserved with
+\code{CONFIG_NUM_METAIRQ_PRIORITIES} (0 by default, so there are none). A ready meta-IRQ thread runs
+even before a running cooperative thread, and even when the scheduler is locked. They exist for
+drivers that need a thread which behaves almost like an interrupt handler, and applications should
+not need them.
+
+\subsection{When the scheduler runs}
+The rule, with the exception that makes it interesting: \textbf{the running thread is the
+highest-priority ready thread, unless the running thread is cooperative}. The scheduler applies it
+at a small number of moments:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{Moment} & \thead{What can happen} \\
+  \midrule
+  The running thread \textbf{blocks, sleeps or returns} & The highest-priority ready thread runs, whatever the kind of the thread that stopped. \\
+  The running thread \textbf{makes another thread ready}, e.g. with \code{k_sem_give()} & If the running thread is preemptible and the other thread has a higher priority, the switch happens \emph{inside} \code{k_sem_give()}, before it returns. \\
+  An \textbf{interrupt makes a thread ready}, e.g. a timer expires & Same rule, when the interrupt handler returns. \\
+  The running thread calls \textbf{\code{k_yield()}} & Another ready thread of the \textbf{same or higher} priority runs, if there is one. If there is none, \code{k_yield()} returns at once. \\
+  A \textbf{time slice} ends & With \code{CONFIG_TIMESLICING=y} (the default), a preemptible thread that has run for \code{CONFIG_TIMESLICE_SIZE} ms (20 by default) gives way to a ready thread of the same priority. Priorities above \code{CONFIG_TIMESLICE_PRIORITY} (0) are not sliced. \\
+\end{booktable}
+
+Two rules about equal priorities follow from the table and surprise people. A thread made ready does
+\textbf{not} preempt a running thread of its own priority: it waits until the running thread blocks,
+yields or runs out of its time slice. And \code{k_yield()} never gives the CPU to a lower priority,
+which is why it cannot be used to let a lower-priority thread run.
+
+\textbf{\code{k_sched_lock()}} makes the running thread behave as if it were cooperative until
+\code{k_sched_unlock()}. It is how the kernel starts the static threads, and a cheap way to keep a
+short sequence from being interleaved with other threads. Interrupts still run.
+
+The \code{threads} example shows each of these moments in turn, as a trace that is the same on every
+run.
+
+\subsection{Time}
+
+\subsubsection{Ticks}
+The kernel counts time in \textbf{ticks} of its system clock, and every timeout is kept as a number
+of ticks. \code{CONFIG_SYS_CLOCK_TICKS_PER_SEC} sets the rate, and its defaults, in
+\code{deps/zephyr/kernel/Kconfig}, are 100 for \code{native_sim} and QEMU, which makes a tick 10 ms,
+and 10000 for a tickless kernel (\code{CONFIG_TICKLESS_KERNEL}), as on many boards.
+\code{native_sim} is tickless too, but of the two defaults the first one that applies wins, so its
+tick stays 10 ms. \textbf{Nothing about time is finer than a tick}: a 25 ms timeout on
+\code{native_sim} becomes three ticks.
+
+\code{k_uptime_get()} returns the milliseconds since boot, and \code{k_uptime_ticks()} the ticks.
+
+\subsubsection{Timeouts}
+Every call that can wait takes a \code{k_timeout_t}:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{Timeout} & \thead{Meaning} \\
+  \midrule
+  \code{K_NO_WAIT} & Do not wait: succeed at once or fail at once. \\
+  \code{K_FOREVER} & Wait for as long as it takes. \\
+  \code{K_MSEC(ms)}, \code{K_SECONDS(s)}, \code{K_USEC(us)}, \code{K_TICKS(t)} & Wait at most this long, \textbf{relative} to now. \\
+  \code{K_TIMEOUT_ABS_MS(ms)}, \code{K_TIMEOUT_ABS_TICKS(t)} & Wait until the uptime reaches this value. Needs \code{CONFIG_TIMEOUT_64BIT}, which is on by default. \\
+\end{booktable}
+
+\code{k_msleep(ms)} is \code{k_sleep(K_MSEC(ms))}.
+
+\subsubsection{Why a relative timeout lasts one tick longer}
+A thread that asks to sleep for three ticks does so at some moment \emph{during} the current tick,
+and the kernel does not know how much of that tick has already passed. To guarantee \textbf{at
+least} the time asked for, it adds one tick. The line in \code{z_add_timeout()}, in
+\code{deps/zephyr/kernel/timeout.c}, is:
+
+\begin{ccode}
+to->dticks = timeout.ticks + 1 + ticks_elapsed;
+\end{ccode}
+
+\noindent So on \code{native_sim}, \code{k_msleep(30)} returns after 40 ms, and \code{k_msleep(500)}
+after 510. The duration is first rounded \textbf{up} to whole ticks, so \code{k_msleep(25)} also
+returns after 40 ms.
+
+A loop that sleeps for its period after doing its work therefore \textbf{drifts}: each round starts
+a tick later than the one before, plus however long the work took. \textbf{An absolute timeout does
+not drift.} It needs no extra tick, since the deadline is a fixed point, so a loop that sleeps until
+the next multiple of its period wakes exactly on it:
+
+\begin{ccode}
+for (int64_t next = period_ms; ; next += period_ms) {
+	k_sleep(K_TIMEOUT_ABS_MS(next));
+	do_work();
+}
+\end{ccode}
+
+\noindent If the deadline has already passed when the thread goes to sleep, the thread wakes at the
+next tick: \code{z_add_timeout()} waits \code{max(1, dticks)} ticks for an absolute timeout. A
+periodic thread that falls behind therefore catches up one tick at a time, rather than all at once.
+
+\subsubsection{Busy waiting}
+\code{k_busy_wait(usec)} keeps the CPU busy for a number of microseconds, without giving it up. It
+is for delays too short for a tick, such as the few microseconds a peripheral needs between two
+register writes, and is almost never the right tool for anything longer. Two properties matter
+later. It measures elapsed time, not time spent running, so a thread preempted during a busy wait
+does not get the lost time back. And, unlike an ordinary loop, it lets simulated time pass on
+\code{native_sim}.
+
+\subsection{Kernel timers}
+A \textbf{kernel timer} calls a function when a timeout expires, once or periodically:
+
+\begin{ccode}
+static void sample_expired(struct k_timer *timer);
+
+K_TIMER_DEFINE(sample_timer, sample_expired, NULL);
+
+k_timer_start(&sample_timer, K_MSEC(100), K_MSEC(100));
+\end{ccode}
+
+\noindent \code{k_timer_start()} takes the delay to the first expiry and the period after it; a
+period of \code{K_NO_WAIT} makes the timer one-shot. \code{k_timer_stop()} stops it. The two
+functions given to \code{K_TIMER_DEFINE()} are both optional:
+
+\begin{itemize}
+  \item The \textbf{expiry function} runs \emph{in the system clock’s interrupt handler}, every time the
+    timer expires. It is interrupt context, with every restriction the next section lists.
+  \item The \textbf{stop function} runs when the timer is stopped with \code{k_timer_stop()} while running,
+    in the context of whoever called \code{k_timer_stop()}.
+\end{itemize}
+
+A thread can also wait for a timer instead of giving it a function: \code{k_timer_status_sync()}
+blocks until the timer expires, and returns at once if it has already expired since its status was
+last read, or is stopped. \code{k_timer_status_get()} returns how many times the timer has expired
+since then, without blocking. Both reset the count.
+
+\textbf{Timers do not add the extra tick.} \code{k_timer_start()} subtracts one tick from a relative
+delay before handing it to \code{z_add_timeout()}, which adds it back, and every period is counted
+from the previous expiry rather than from when the expiry function happened to run. The comment in
+\code{deps/zephyr/kernel/timer.c} explains that the period ``is always guaranteed to be reset from
+within the timer ISR, so no round up is desired and 1 is subtracted in there''. That is why a 500 ms
+one-shot timer started at 0 ms expires at exactly 500 ms, and a periodic 100 ms timer at 100, 200
+and 300 ms, with no drift, while \code{k_msleep(500)} returns at 510 ms.
+
+\subsection{Interrupt context}
+Code in an interrupt handler runs \emph{on top of} whatever thread was running, on a separate stack
+(\code{CONFIG_ISR_STACK_SIZE}, 2048 bytes by default). It is not a thread, so \textbf{it must never
+block or sleep}: there is no thread to put to sleep, and the thread underneath has nothing to do
+with it. \code{k_is_in_isr()} tells code which context it is in.
+
+What that means in practice:
+
+\begin{itemize}
+  \item A kernel function may only be called from an ISR if its documentation says so. In
+    \code{deps/zephyr/include/zephyr/kernel.h}, those carry the \code{@isr_ok} tag: \code{k_sem_give()},
+    \code{k_work_submit()}, \code{k_msgq_put()} and many more.
+  \item A function that can wait may be called from an ISR only with \code{K_NO_WAIT}, as
+    \code{k_sem_take()}’s documentation says: \emph{``\code{timeout} must be set to \code{K_NO_WAIT} if
+    called from ISR''}.
+  \item \textbf{Mutexes may not be used from ISRs at all}: a mutex has an owner, and an ISR is not a thread
+    that could own it.
+  \item An ISR should be short, because while it runs, no thread runs.
+\end{itemize}
+
+Breaking the rule is not always caught. A \code{k_msleep()} in a timer’s expiry function builds and,
+on \code{native_sim}, even appears to work. With \textbf{\code{CONFIG_ASSERT=y}}, the kernel checks,
+and the same program stops at once:
+
+\begin{console}
+ASSERTION FAIL [!arch_is_in_isr()] @ WEST_TOPDIR/deps/zephyr/kernel/sched.c:1222
+\end{console}
+
+\noindent Enable assertions while developing: they cost flash and time, and catch exactly this kind
+of mistake.
+
+On a board, a peripheral’s interrupt handler is connected with \code{IRQ_CONNECT()}, which the
+driver usually does for you. In this book the interrupt handler you will meet most is the system
+clock’s, through timer expiry functions, and on \code{native_sim} the emulated GPIO controller’s
+callbacks run in the context of whoever changed the pin, as Chapter~\ref{c2:ch} showed.
+
+\subsection{Work queues}
+Interrupt handlers must be short and may not block, so real work is moved out of them: into a
+thread. A \textbf{work queue} is a thread with a queue of \textbf{work items}, each a function to
+call. An ISR submits an item, and the work queue’s thread calls its function, soon after, in thread
+context, where it may sleep, block, lock a mutex and log.
+
+\subsubsection{Work items}
+\begin{ccode}
+static void sample_handler(struct k_work *work);
+
+K_WORK_DEFINE(sample_work, sample_handler);
+
+k_work_submit(&sample_work);
+\end{ccode}
+
+\noindent \code{k_work_submit()} puts the item on the \textbf{system work queue} and is safe to call
+from an ISR. It returns:
+
+\begin{booktable}{@{}lL@{}}
+  \thead{Return value} & \thead{Meaning} \\
+  \midrule
+  1 & The item was idle, and is now queued. \\
+  0 & The item was already queued. Nothing changes: it stays in its place and runs \textbf{once}. \\
+  2 & The item was running, and is now queued again, to the queue it is running on. \\
+  negative & An error, such as a queue that has not been started. \\
+\end{booktable}
+
+The second row is a property to design around: \textbf{a work item is not a counter}. Submitting it
+three times before it runs gives one call. If every event matters, the events must be counted or
+queued somewhere else, and the handler must process all of them.
+
+A handler receives only the \code{struct k_work} pointer. To give it context, embed the
+\code{k_work} in a larger structure and recover the structure with \code{CONTAINER_OF()}.
+
+\subsubsection{The system work queue}
+Zephyr starts one work queue for everyone, in a thread named \code{sysworkq}:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{Option} & \thead{Default} \\
+  \midrule
+  \code{CONFIG_SYSTEM_WORKQUEUE_PRIORITY} & -1: the lowest cooperative priority \\
+  \code{CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE} & 1024 \\
+  \code{CONFIG_SYSTEM_WORKQUEUE_NO_YIELD} & Not set: the queue yields between items \\
+\end{booktable}
+
+Being cooperative, a handler on the system work queue is never preempted by another thread, and
+every subsystem that uses the queue waits for it. \textbf{Keep handlers there short, and never block
+in them for long.} The Kconfig help says why the queue still yields between items: to keep a long
+queue from starving other threads.
+
+\subsubsection{Work queues of your own}
+Work that is slow, or that must not wait behind other subsystems’ work, gets a queue of its own:
+
+\begin{ccode}
+K_THREAD_STACK_DEFINE(store_stack, 1024);
+static struct k_work_q store_queue;
+
+const struct k_work_queue_config config = {.name = "store_q"};
+
+k_work_queue_start(&store_queue, store_stack, K_THREAD_STACK_SIZEOF(store_stack), 5, &config);
+k_work_submit_to_queue(&store_queue, &store_work);
+\end{ccode}
+
+\noindent The queue’s priority is its thread’s priority, and may be preemptible. \code{struct
+k_work_queue_config} also has \code{no_yield} and \code{essential}.
+
+\subsubsection{Delayable work}
+A \textbf{delayable} work item is submitted after a delay, through a timeout inside it:
+
+\begin{ccode}
+K_WORK_DELAYABLE_DEFINE(idle_work, idle_handler);
+
+k_work_schedule(&idle_work, K_MSEC(250));     /* If not already scheduled: in 250 ms. */
+k_work_reschedule(&idle_work, K_MSEC(250));   /* In 250 ms from now, whatever was scheduled. */
+\end{ccode}
+
+\noindent The two differ exactly where it matters:
+
+\begin{itemize}
+  \item \textbf{\code{k_work_schedule()}} does nothing if the item is already scheduled or queued: the first
+    deadline wins. It returns 0 in that case.
+  \item \textbf{\code{k_work_reschedule()}} replaces any deadline with the new one: the last call wins.
+\end{itemize}
+
+\code{k_work_reschedule()} is therefore the tool for a timeout that should expire only once events
+\emph{stop} coming, such as an inactivity timeout or a debounce. \code{k_work_cancel_delayable()}
+cancels a scheduled item, and the \code{_sync} variants of the cancel functions also wait for a
+running handler to finish. Inside a handler, \code{k_work_delayable_from_work()} turns the
+\code{struct k_work *} back into the delayable item. The \code{timer_work} example uses all three
+kinds of queue.
+
+\subsection{ISR, work item or thread?}
+\begin{booktable}{@{}LLL@{}}
+  \thead{Use} & \thead{For} & \thead{Because} \\
+  \midrule
+  \textbf{An ISR}, or a timer’s expiry function & Recording what happened, giving a semaphore, submitting work. Microseconds. & Nothing else can react before the next thread runs. \\
+  \textbf{A work item} on the system work queue & Short follow-up work that may block briefly: reading a register over I2C, logging. & No thread and stack of its own to pay for. \\
+  \textbf{A work queue of your own} & Follow-up work that is slow, or must not wait for other subsystems. & Its own priority, its own stack, and nobody else’s work in the way. \\
+  \textbf{A thread} & Work with state that lives across many events, such as a protocol or a control loop, and waits in more than one place. & A thread keeps its place in its own code between events; a handler starts from the top every time. \\
+\end{booktable}
+
+\subsection{\code{native_sim}’s time model}
+\code{native_sim} advances simulated time only when the CPU is idle, that is, when every thread is
+blocked or sleeping. Code that runs takes \textbf{no} simulated time. Everything above behaves as on
+a microcontroller as long as threads wait with kernel calls, and the traces of this chapter’s
+examples are exact for that reason. Three things do not:
+
+\textbf{A busy loop stops the world.} A thread that waits with \code{while (!flag) \{\}} for an
+interrupt to set \code{flag} never lets the CPU go idle, so simulated time never moves, the
+interrupt never arrives, and nothing else ever runs. On a microcontroller the timer interrupt would
+preempt the loop after the right time, and the program would merely waste power. The
+\code{busy_loop} example shows both. The fix is the same on both: \textbf{block on a kernel object},
+such as a semaphore the ISR gives, or the timer itself with \code{k_timer_status_sync()}. Zephyr’s
+documentation of the architecture (\code{deps/zephyr/boards/native/doc/arch_soc.rst}) suggests
+\code{k_cpu_idle()} inside such a loop as a last resort.
+
+\textbf{A stuck program ignores the first \code{Ctrl+C}.} \code{native_sim} handles \code{SIGINT} by
+asking the simulation to stop at its next step, and a stuck simulation takes no next step. A second
+\code{Ctrl+C} ends it. For the same reason \code{timeout 5 ./zephyr.exe} does not stop a stuck
+program, and \code{timeout -s KILL 5 ./zephyr.exe} does. The repository’s test runner kills a
+program that runs for 30 seconds of real time and reports it as a probable busy loop.
+
+\textbf{Preemption and time slices happen only at kernel calls and during \code{k_busy_wait()}.} An
+interrupt can only arrive when simulated time moves, so a preemptible thread running ordinary code
+is never interrupted, and a loop of a million iterations is never sliced. \code{k_busy_wait()} does
+move time, and during it everything works: a thread that wakes preempts, and two preemptible threads
+of equal priority busy-waiting 50 ms each take turns every 20 ms, one time slice. This chapter’s
+exercises use \code{k_busy_wait()} wherever a thread has to stand for work that takes CPU time.
+
+\subsection{Stacks}
+Every thread has a stack of the size its definition gave, and nothing stops a thread from using
+more: it writes past the end, into whatever lies there, usually another thread’s stack or kernel
+data. Stack overflow is one of the most common causes of crashes that make no sense in an RTOS
+application, and stack sizes are one of the most common things to get wrong.
+
+The stacks the kernel creates have Kconfig options. On \code{native_sim/native/64}:
+
+\begin{booktable}{@{}Ll@{}}
+  \thead{Option} & \thead{Value} \\
+  \midrule
+  \code{CONFIG_MAIN_STACK_SIZE} & 1024 \\
+  \code{CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE} & 1024 \\
+  \code{CONFIG_ISR_STACK_SIZE} & 2048 \\
+  \code{CONFIG_IDLE_STACK_SIZE} & 256 \\
+\end{booktable}
+
+\subsubsection{On a board}
+On a microcontroller, three tools find stack problems at run time:
+
+\begin{itemize}
+  \item The \textbf{thread analyzer} (\code{CONFIG_THREAD_ANALYZER}) fills each stack with a known pattern
+    at creation and reports how much of it has been overwritten: each thread’s high-water mark.
+  \item The \textbf{stack sentinel} (\code{CONFIG_STACK_SENTINEL}) stores a magic value at the far end of
+    each stack, and checks it at every context switch, among other places.
+  \item \textbf{Hardware stack protection} (\code{CONFIG_HW_STACK_PROTECTION}) uses the MPU to fault on the
+    first write past the stack.
+\end{itemize}
+
+\subsubsection{On \code{native_sim}}
+\textbf{None of them works on \code{native_sim}}, for one reason: a \code{native_sim} thread does
+not run on the stack Zephyr gave it. It runs on the stack of the Linux thread that backs it, which
+is megabytes deep, and Zephyr’s stack only holds a little bookkeeping. The help text of
+\code{CONFIG_ARCH_POSIX_RECOMMENDED_STACK_SIZE}, in \code{deps/zephyr/arch/posix/Kconfig}, says so,
+and the thread analyzer’s Kconfig says \code{depends on !ARCH_POSIX}. Asking for it aborts the
+build:
+
+\begin{console}
+warning: THREAD_ANALYZER (defined at subsys/debug/thread_analyzer/Kconfig:6) was assigned the value
+'y' but got the value 'n'. Check these unsatisfied dependencies: (!ARCH_POSIX) (=n).
+\end{console}
+
+\noindent The documentation (\code{deps/zephyr/boards/native/doc/arch_soc.rst}) lists stack canaries
+and hardware stack protection as unsupported too. The stack sentinel does build, but it guards a
+stack the thread never uses: the \code{stack_usage} example, whose thread needs twice its stack,
+runs without complaint with \code{CONFIG_STACK_SENTINEL=y} as well as without.
+
+\subsubsection{Static stack analysis}
+What works everywhere is asking the compiler. \textbf{\code{CONFIG_STACK_USAGE=y}} compiles every
+file with GCC’s \code{-fstack-usage}, which writes, beside each object file, a \code{.su} file with
+the stack frame size of every function in it:
+
+\begin{console}
+.../src/main.c:18:13:print_report	2096	dynamic,bounded
+.../src/main.c:27:13:reporter_entry	16	static
+\end{console}
+
+\noindent A frame is one function’s own need, not including the functions it calls. \textbf{A thread
+needs the sum of the frames along its deepest call chain}, plus, on targets where interrupts run on
+the interrupted thread’s stack, what an interrupt pushes onto it. The \code{.su} files give the
+frames; working out the chains is up to you, or to tools built on the same data. The numbers depend
+on the architecture and the compiler options, so \code{native_sim}’s x86-64 frames are a method to
+practise, not numbers to copy into a board’s configuration.
+
+\subsection{Summary}
+\begin{itemize}
+  \item A thread is an entry function, a stack, a priority and a \code{struct k_thread}. Define long-lived
+    threads with \code{K_THREAD_DEFINE()}; the kernel starts them just before \code{main()}, with the
+    scheduler locked until all of them are started.
+  \item Lower numbers are higher priorities. Negative priorities are cooperative, and a cooperative thread
+    keeps the CPU until it gives it up. A preemptible thread loses it as soon as a higher-priority
+    thread is ready.
+  \item The scheduler acts when a thread blocks, sleeps or returns, when a thread or an interrupt makes a
+    higher-priority thread ready, at \code{k_yield()}, and at the end of a time slice.
+  \item Time is kept in ticks. A relative timeout is rounded up and gets one extra tick; an absolute timeout
+    does not, which makes it the tool for periodic loops. Timers compensate for the extra tick, and do
+    not drift.
+  \item A timer’s expiry function runs in interrupt context: no sleeping, no blocking, no mutexes, and
+    \code{K_NO_WAIT} for anything that can wait. \code{CONFIG_ASSERT=y} catches the mistake.
+  \item Defer work from ISRs to work queues. A work item submitted while queued runs once. Use
+    \code{k_work_reschedule()} for a timeout that restarts with every event.
+  \item On \code{native_sim}, code takes no simulated time: a busy loop stalls everything, and preemption
+    only happens at kernel calls and during \code{k_busy_wait()}.
+  \item Stack sizes are unchecked on \code{native_sim}. Use \code{CONFIG_STACK_USAGE} there, and the thread
+    analyzer on a board.
+\end{itemize}

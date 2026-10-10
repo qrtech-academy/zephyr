@@ -1,0 +1,455 @@
+% Appendix: Paper A, from exam/paper_a.md. The questions only; the model answers are a separate
+% appendix, as they are a separate file, so the paper can be sat without them in view.
+
+\chapter{Self-Assessment Paper A}
+\label{exa:ch:paper}
+
+\noindent\textbf{Time:} 3 hours. \textbf{Closed book.} No compiler and no reference material.
+\textbf{Total: 100 marks.}
+
+This paper exists to test your own skills and knowledge. It is not a qualification and it gates
+nothing. It draws on all six chapters, so \textbf{it is meant to be taken once you have finished
+the book}. The model answers are in Appendix~\ref{ansa:ch:answers}.
+
+\section*{Rubric}
+\textbf{Zephyr 4.4} and the board \code{native_sim/native/64} are assumed throughout, built with the
+host's GCC, as in the book. Headers may be assumed included unless a question asks you to name them.
+
+\textbf{Code is marked on semantics, not on syntax.} A missing \code{#include}, a missing semicolon
+or a brace in the wrong column costs nothing. A missing \code{device_is_ready()} check costs
+everything.
+
+\textbf{Where a question says ``in the book's style''}, it means Zephyr's own conventions as the
+chapters use them:
+\begin{itemize}
+  \item \code{snake_case}, and the kernel's \code{k_} and \code{K_} spellings.
+  \item Application options prefixed \code{APP_}.
+  \item \code{IS_ENABLED()} rather than \code{#ifdef} where both would work.
+  \item Log modules rather than \code{printk()} in anything that is not a one-off.
+\end{itemize}
+
+\textbf{The simulator's behaviour may be assumed} without deriving it: 100 ticks per second, a sleep
+that ends on the tick after the one it asked for, simulated time that advances only when every
+thread is waiting, immediate logging, and no thread analyzer, stack protection or userspace.
+
+\textbf{Where a question says ``state the consequence''}, naming the cause earns half the marks and
+saying what it does to the running program earns the other half. ``This is wrong'' scores nothing.
+
+\textbf{Where a question asks you to find defects}, the number of defects is stated. Listing more
+than the stated number is not penalised, but only the stated number is marked, so put your
+strongest answers first.
+
+\subsection*{Marks}
+
+\begin{narrowtable}{@{}lcccccccc@{}}
+  \thead{Question} & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+  \midrule
+  \thead{Marks} & 12 & 12 & 13 & 13 & 12 & 13 & 13 & 12 \\
+\end{narrowtable}
+
+% ------------------------------------------------------------------------------------------
+\question{The workspace and the build}{12}
+\label{exa:q:1}
+
+\qpart{a} A colleague clones the book's repository, runs \code{make setup}, waits for it to finish,
+and then builds:
+
+\begin{console}
+-- Application: /home/dev/zephyr/lectures/L01/examples/hello
+-- ZEPHYR_TOOLCHAIN_VARIANT not set, trying to locate Zephyr SDK
+CMake Error at .../cmake/modules/FindZephyr-sdk.cmake:160 (find_package):
+  Could not find a package configuration file provided by "Zephyr-sdk"
+\end{console}
+
+\noindent Explain what the build is looking for and why it is not there. State the one command that
+fixes it, what that command sets, and why this book needs no Zephyr SDK at all. \worth{3}
+
+\qpart{b} With that fixed, a build of a new application of their own fails during configuration:
+
+\begin{console}
+CMake Error at .../cmake/modules/extensions.cmake:3016 (message):
+  No prj.conf file(s) was found in the /home/dev/blink folder(s), please read
+  the Zephyr documentation on application development.
+\end{console}
+
+\noindent Name the three files every Zephyr application must have and state what each one
+contributes. Then state which line of \file{CMakeLists.txt} does most of the work, and why
+\code{project()} must come after it. \worth{3}
+
+\qpart{c} The book's \file{west.yml} holds:
+
+\begin{yamlcode}
+manifest:
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: v4.4.2
+      path: deps/zephyr
+      clone-depth: 1
+      west-commands: scripts/west-commands.yml
+
+  self:
+    path: .
+\end{yamlcode}
+
+\noindent State what \code{west update} does with this file, and where Zephyr ends up. State what
+would change if \code{west-commands} were removed. Then state the two steps that move the book's
+workspace to a newer Zephyr release, and why the manifest does not import Zephyr's own. \worth{4}
+
+\qpart{d} A colleague builds once with an option on the command line:
+
+\begin{shell}
+west build -p -b native_sim/native/64 app -- -DCONFIG_LOG_DEFAULT_LEVEL=2
+\end{shell}
+
+\noindent Later they build the same application in the same directory without that option, and the
+level is still 2. Explain why, and give the command that proves what the configuration really is.
+\worth{2}
+
+% ------------------------------------------------------------------------------------------
+\question{Kconfig and logging}{12}
+\label{exa:q:2}
+
+\qpart{a} An application adds \code{CONFIG_SHELL_LOG_BACKEND=y} to its \file{prj.conf}. The build
+stops:
+
+\begin{console}
+warning: SHELL_LOG_BACKEND (defined at subsys/shell/Kconfig:278) was assigned the value 'y' but got
+the value 'n'. Check these unsatisfied dependencies: SHELL (=n). ...
+
+error: Aborting due to Kconfig warnings
+\end{console}
+
+\noindent Explain what Kconfig did with the assignment and why Zephyr stops the build rather than
+carrying on. Give the two ways of making the build succeed, and state where you would read the value
+the build actually ended up with. \worth{4}
+
+\qpart{b} An application has a Kconfig option \code{APP_FAHRENHEIT}. Its \file{main.c} contains:
+
+\begin{ccode}
+if (IS_ENABLED(CONFIG_APP_FARENHEIT)) {
+	printk("%d F\n", celsius_to_fahrenheit(reading));
+}
+\end{ccode}
+
+\noindent The build succeeds with no warning, and the program prints Celsius whatever
+\file{prj.conf} says. Explain what the compiler did with that line, state the consequence, and state
+why the same misspelling in \file{prj.conf} would not have survived. Name one thing that would have
+caught it. \worth{3}
+
+\qpart{c} A module is registered with \code{LOG_MODULE_REGISTER(monitor);} and the application logs
+four messages, at \code{LOG_ERR}, \code{LOG_WRN}, \code{LOG_INF} and \code{LOG_DBG}. The application
+is built with:
+
+\begin{shell}
+west build -p -b native_sim/native/64 app -- -DCONFIG_LOG_DEFAULT_LEVEL=2
+\end{shell}
+
+\noindent State which of the four messages are printed. State whether the others are in the binary,
+and describe one way to demonstrate your answer without reading the source. \worth{3}
+
+\qpart{d} \code{native_sim} builds with \code{CONFIG_LOG_MODE_IMMEDIATE=y}, while the same
+application built for a microcontroller gets deferred logging. State one consequence of each mode
+for the running program. \worth{2}
+
+% ------------------------------------------------------------------------------------------
+\question{Devicetree, bindings and overlays}{13}
+\label{exa:q:3}
+
+\qpart{a} Two builds of the same application fail in two different ways. The first:
+
+\begin{console}
+error: '__device_dts_ord_32' undeclared here (not in a function); did you mean '__device_dts_ord_38'?
+\end{console}
+
+\noindent The second:
+
+\begin{console}
+undefined reference to `__device_dts_ord_32'
+\end{console}
+
+\noindent State what \code{32} is and where you would look it up. Explain what each of the two
+messages means about the node, and give one change that produces the first and one that produces the
+second. \worth{5}
+
+\qpart{b} A binding declares one required property and one optional one:
+
+\begin{yamlcode}
+compatible: "qacademy,alarm"
+include: base.yaml
+properties:
+  threshold-c:
+    type: int
+    required: true
+  label-text:
+    type: string
+\end{yamlcode}
+
+\noindent Two overlays are written against it. The first omits \code{threshold-c}. The second adds
+\code{hysteresis-c = <2>;}, which the binding does not declare, and the C code then reads it with
+\code{DT_PROP(DT_NODELABEL(alarm0), hysteresis_c)}.
+
+State what the build does in each case, and at which stage. Then state why a property that the
+binding does not declare is a different kind of mistake from a misspelled \code{CONFIG_} macro in C.
+\worth{4}
+
+\qpart{c} An overlay describes a button as
+\code{gpios = <&gpio0 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>}. State what \code{GPIO_ACTIVE_LOW}
+changes about the C code that reads the pin, and state what level \code{gpio_emul_input_set()} must
+be given to simulate a press. \worth{2}
+
+\qpart{d} A node can be reached in C through its node name, its label and an alias. State which of
+the three a portable sample should use and why, and state what \code{DT_NODELABEL()} is for.
+\worth{2}
+
+% ------------------------------------------------------------------------------------------
+\question{Threads, scheduling and time}{13}
+\label{exa:q:4}
+
+\qpart{a} The trace below is printed by an application whose threads are named with their priorities
+in brackets. Every thread waits on a semaphore until it is woken.
+
+\begin{console}
+-- Act 1
+main   ( 10)  waking coop_a
+coop_a ( -1)  running
+coop_a ( -1)  gave coop_b's semaphore: coop_b has a higher priority, but I keep the CPU
+coop_b ( -2)  running, because coop_a yielded
+coop_a ( -1)  back again, after coop_b returned
+-- Act 2
+main   ( 10)  waking low
+low    (  5)  running
+low    (  5)  giving high's semaphore
+high   (  2)  running, in the middle of low's k_sem_give()
+low    (  5)  back again: high preempted me inside k_sem_give()
+\end{console}
+
+\noindent Explain why \code{coop_b} does not run at the moment its semaphore is given, while
+\code{high} does. State what must have happened between the third and fourth lines of Act 1. State
+which priorities are cooperative and which are preemptible, and what that means for a critical
+section. \worth{6}
+
+\qpart{b} On \code{native_sim}, a thread that calls \code{k_msleep(500)} at time 0 wakes at 510 ms,
+but a one-shot \code{k_timer} started at time 0 with \code{K_MSEC(500)} expires at exactly 500 ms.
+Explain both numbers. State what a periodic timer does about the difference. \worth{4}
+
+\qpart{c} An application's \code{main()} prints one line and returns. The program does not exit.
+Explain what returning from \code{main()} ends and what it does not, state how you would make the
+program stop by itself, and state what \code{-no-rt} changes about the run and what it does not.
+\worth{3}
+
+% ------------------------------------------------------------------------------------------
+\question{Interrupt context, work queues and simulated time}{12}
+\label{exa:q:5}
+
+\qpart{a} The following is submitted for review.
+
+\begin{ccode}
+static void sample_expiry(struct k_timer *timer)
+{
+	struct sample sample;
+
+	LOG_INF("sampling");
+	k_mutex_lock(&bus_mutex, K_FOREVER);
+	read_sensor(&sample);
+	k_mutex_unlock(&bus_mutex);
+	k_msleep(5);
+	store(&sample);
+}
+
+K_TIMER_DEFINE(sample_timer, sample_expiry, NULL);
+\end{ccode}
+
+\noindent Identify \textbf{three} defects, state the consequence of each, and describe the standard
+Zephyr shape this function should have instead. \worth{5}
+
+\qpart{b} The system work queue runs at a cooperative priority. State what happens to other work
+items when one of them takes 200 ms, state what happens if a work item blocks forever, and give the
+one condition under which you would start a work queue of your own. \worth{3}
+
+\qpart{c} This loop works on a microcontroller and hangs on \code{native_sim}:
+
+\begin{ccode}
+static volatile bool ready;
+
+static void isr_handler(const struct device *dev, ...)
+{
+	ready = true;
+}
+
+int main(void)
+{
+	start_hardware();
+	while (!ready) {
+	}
+	LOG_INF("ready");
+	return 0;
+}
+\end{ccode}
+
+\noindent Explain what \code{native_sim} does here and why, state what the same code costs on real
+hardware, and give two different rewrites that are correct on both. \worth{4}
+
+% ------------------------------------------------------------------------------------------
+\question{Synchronization and communication}{13}
+\label{exa:q:6}
+
+\qpart{a} One application is run twice. Three threads share one CPU: \code{low} (priority 7) takes a
+lock and computes for 100 ms, \code{high} (priority 5) wants the same lock 21 ms later, and
+\code{medium} (priority 6) wakes at 31 ms and computes for 500 ms without needing the lock.
+
+With a semaphore as the lock:
+
+\begin{console}
+[   0 ms] low    takes the semaphore
+[  21 ms] high   wants the semaphore
+[  31 ms] medium starts computing, needs no lock
+[ 531 ms] medium is done
+[ 600 ms] low    gives the semaphore back
+high waited 579 ms for the semaphore
+\end{console}
+
+\noindent With a \code{k_mutex} instead:
+
+\begin{console}
+[   0 ms] low    takes the mutex
+[  21 ms] high   wants the mutex
+[ 100 ms] low    (priority 5) gives the mutex back
+high waited 79 ms for the mutex
+\end{console}
+
+\noindent Name the phenomenon the first trace shows. Explain both waiting times, arithmetic
+included. State what the kernel did to \code{low} in the second run and when it undid it. State one
+thing the mutex does \textbf{not} fix. \worth{6}
+
+\qpart{b} A producer submits samples to a \code{k_msgq} with
+\code{k_msgq_put(&q, &sample, K_NO_WAIT)} and the call starts returning \code{-ENOMSG}. State what
+that means and what happens to the sample. State what \code{K_FOREVER} would do instead, and which
+of the two an interrupt handler may use. \worth{3}
+
+\qpart{c} Three observers are attached to one zbus channel: a listener, a subscriber and a message
+subscriber. Over a run of several publications, the subscriber prints one reading twice and never
+prints another, while the message subscriber prints every reading exactly once. Explain the
+subscriber's behaviour. State in which thread and with what held the listener runs, and what that
+forbids it from doing. \worth{4}
+
+% ------------------------------------------------------------------------------------------
+\question{Writing a driver}{13}
+\label{exa:q:7}
+
+\qpart{a} An application starts with:
+
+\begin{ccode}
+const struct device *const sensor = DEVICE_DT_GET(DT_NODELABEL(thermo0));
+
+if (!device_is_ready(sensor)) {
+	LOG_ERR("thermo0 is not ready");
+	return 0;
+}
+\end{ccode}
+
+\noindent The message is printed on every boot, although the build succeeded and the node is
+enabled. State the two things \code{device_is_ready()} reports on, name the most likely thing the
+driver's init function did, and state what would happen if the application used the device anyway.
+\worth{4}
+
+\qpart{b} A driver for an I2C part contains the following. It builds, and one instance works until a
+second is added to the devicetree.
+
+\begin{ccode}
+#define DT_DRV_COMPAT qacademy_thermo
+
+struct thermo_data {
+	struct i2c_dt_spec i2c;
+	int16_t last_sample;
+};
+
+static int thermo_init(const struct device *dev)
+{
+	struct thermo_data *data = dev->data;
+	uint8_t id;
+
+	data->i2c.bus = DEVICE_DT_GET(DT_NODELABEL(i2c0));
+	data->i2c.addr = 0x48;
+
+	(void)i2c_reg_read_byte_dt(&data->i2c, THERMO_REG_WHO_AM_I, &id);
+	return 0;
+}
+\end{ccode}
+
+\noindent Identify \textbf{three} defects, state the consequence of each, and give the corrected
+shape of the affected lines. \worth{5}
+
+\qpart{c} The driver's Kconfig option is written \code{depends on DT_HAS_QACADEMY_THERMO_ENABLED}.
+State where that symbol comes from and what the dependency achieves. State what happens to the
+driver, and to an application that calls \code{DEVICE_DT_GET()} on the node, if the node is given
+\code{status = "disabled"}. \worth{2}
+
+\qpart{d} On this build, I2C controllers initialize at priority 50 and sensors at 90, both at the
+\code{POST_KERNEL} level. State what the numbers order, and what would go wrong if the sensor's
+priority were 40. \worth{2}
+
+% ------------------------------------------------------------------------------------------
+\question{Subsystems and debugging}{12}
+\label{exa:q:8}
+
+\qpart{a} A shell session on a running program:
+
+\begin{console}
+uart:~$ greet Ada 9
+times must be between 1 and 5, not '9'
+uart:~$ retval
+-22
+uart:~$ foo
+foo: command not found
+uart:~$ retval
+-8
+uart:~$ led
+led - control the LED
+Subcommands:
+  on  off  status
+uart:~$ retval
+1
+\end{console}
+
+\noindent State where each of the three return values comes from, and what each one means. State
+what the shell does with a handler's return value, and why a command handler should return a
+negative errno rather than printing and returning 0. \worth{3}
+
+\qpart{b} A boot counter is stored with the settings subsystem. It counts 1, 2, 3 over three runs
+started with \code{west build -t run}, then goes back to 1 after the developer rebuilds with
+\code{-p}. Explain where the counter lives on \code{native_sim} and why a pristine build resets it.
+Name the command-line option that makes every run a first boot without deleting anything. \worth{3}
+
+\qpart{c} Two runs of the same application end differently:
+
+\begin{console}
+[00:00:00.000,000] <err> os: >>> ZEPHYR FATAL ERROR 3: Kernel oops on CPU 0
+[00:00:00.000,000] <err> app: main() is still running, and returns
+\end{console}
+
+\begin{console}
+ASSERTION FAIL [percent <= 100] @ .../src/main.c:41
+[00:00:00.000,000] <err> os: >>> ZEPHYR FATAL ERROR 4: Kernel panic on CPU 0
+Exiting due to fatal error
+\end{console}
+
+\noindent Explain the difference between the two reasons, state what the application's
+\code{k_sys_fatal_error_handler()} must do in each case, and state what the process exit status is
+in the second. \worth{3}
+
+\qpart{d} A build with \code{CONFIG_ASAN=y} prints:
+
+\begin{console}
+==1354852==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x78a35ddf4070
+WRITE of size 1 at 0x78a35ddf4070 thread T2
+    #0 0x402bbe in fill .../src/main.c:28
+\end{console}
+
+\noindent State what the report tells you that a microcontroller would not have told you at all.
+State why the program stops here rather than continuing, and state why AddressSanitizer is available
+on this board and not on a Cortex-M build of the same application. \worth{3}

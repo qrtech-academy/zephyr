@@ -1,0 +1,467 @@
+% Section 4.4, from lectures/L04/appendix/c_exercises.md.
+
+\section{Exercises}
+\label{c4:sec:exercises}\label{c4:app:c}
+These exercises reinforce the concepts from \secref{c4:app:a} and \secref{c4:app:b}.
+
+\begin{aside}
+\textbf{How to check your work.} Write each exercise set as its own application under
+\file{lectures/L04/exercises}, with the file names given there, and run \code{make test} from the
+repository root. A set’s tests switch on as soon as its files exist, and a set you have not started
+is reported as \code{SKIP}. Each application grows through its set, and the tests check where it
+ends up. Programs run on \code{native_sim} in simulated time, so their output, timestamps included,
+is compared with the expected output line by line. The threads’ priorities, start delays and sleeps
+given below are part of the exercise: change one, and the output changes.
+
+The solutions are published in the companion repository, under
+\file{lectures/L04/appendix/solutions}, a few days after the lecture. Try each exercise yourself
+before you read them.
+\end{aside}
+
+Remember \code{source env.sh} in every new terminal. Build and run an exercise from the repository
+root:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L04/exercises/exercise1
+./build/zephyr/zephyr.exe -stop_at=3 -no-rt
+\end{shell}
+
+% ---------------------------------------------------------------------
+\exerciseset{Readings in a queue}
+\label{c4:set:1}
+Create an application named \code{exercise1} to work in for this exercise set, with a
+\code{CMakeLists.txt}, a \code{prj.conf} and a \code{src/main.c}.
+
+\exercise{A sampler and a slower storage thread}{Code}
+\label{c4:ex:1.1}
+In this exercise you will connect a fast producer and a slow consumer with a message queue.
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{prj.conf}, set one tick per millisecond, as this chapter’s examples do:
+    \code{CONFIG_SYS_CLOCK_TICKS_PER_SEC=1000}.
+  \item Define a message type:
+\begin{ccode}
+struct reading {
+  uint32_t seq;
+  int64_t timestamp_ms;
+};
+\end{ccode}
+  \item Define a message queue named \code{readings} with room for \textbf{3} readings.
+  \item Write a thread \code{sampler}, priority \textbf{5}, which takes 8 readings, numbered 1 to 8. For
+    each:
+\begin{itemize}
+  \item Fill in a \code{struct reading} with the number and \code{k_uptime_get()}.
+  \item Put it into the queue \textbf{without waiting}. If that fails, print \code{[<t> ms] queue full,
+    dropped \#<n>}, with the reading’s number. Otherwise print \code{[<t> ms] sampled \#<n>, queue
+    <used>/3}.
+  \item Sleep 100 ms.
+\end{itemize}
+After the eighth reading, print \code{[<t> ms] sampler done}.
+  \item Write a thread \code{storage}, priority \textbf{6}, which forever takes a reading from the queue,
+    waiting as long as it takes, prints \code{[<t> ms]   stored \#<n>, <age> ms old} (three spaces after
+    the timestamp), where the age is the uptime minus the reading’s timestamp, and sleeps 350 ms.
+  \item Start both threads with \code{K_THREAD_DEFINE()}, a stack of 1024 bytes, and no start delay.
+\end{itemize}
+
+Print every timestamp with \code{\%4lld}. With \code{-stop_at=3}, the output must be:
+
+\begin{console}
+[   0 ms] sampled #1, queue 1/3
+[   0 ms]   stored #1, 0 ms old
+[ 101 ms] sampled #2, queue 1/3
+[ 202 ms] sampled #3, queue 2/3
+[ 303 ms] sampled #4, queue 3/3
+[ 351 ms]   stored #2, 250 ms old
+[ 404 ms] sampled #5, queue 3/3
+[ 505 ms] queue full, dropped #6
+[ 606 ms] queue full, dropped #7
+[ 702 ms]   stored #3, 500 ms old
+[ 707 ms] sampled #8, queue 3/3
+[ 808 ms] sampler done
+[1053 ms]   stored #4, 750 ms old
+[1404 ms]   stored #5, 1000 ms old
+[1755 ms]   stored #8, 1048 ms old
+\end{console}
+
+\noindent \textbf{Hint:} \code{K_MSGQ_DEFINE()}’s last argument is the message’s alignment:
+\code{alignof(struct reading)}, from \code{<stdalign.h>}. \code{k_msgq_num_used_get()} returns how
+many messages are queued.
+
+\task{Reflection}
+\begin{itemize}
+  \item \code{sampled \#1} is printed before \code{stored \#1}. Why? Give \code{storage} priority 4 instead,
+    and run it again: what changes, and why does the queue read \code{0/3}?
+  \item Why does the sampler put without waiting, rather than with \code{K_FOREVER}? Which kind of code
+    could not wait at all?
+\end{itemize}
+
+\exercise{Keep the newest}{Code}
+\label{c4:ex:1.2}
+
+\task{Tasks}
+Change the sampler so that a full queue drops the \textbf{oldest} reading instead of the new one:
+
+\begin{itemize}
+  \item When the put fails, take the oldest reading out of the queue without waiting, print \code{[<t> ms]
+    queue full, dropped \#<n>} with \textbf{its} number, and put the new reading again.
+  \item Then print \code{sampled \#<n>} for the new reading, as for any other.
+\end{itemize}
+
+The output must now be:
+
+\begin{console}
+[   0 ms] sampled #1, queue 1/3
+[   0 ms]   stored #1, 0 ms old
+[ 101 ms] sampled #2, queue 1/3
+[ 202 ms] sampled #3, queue 2/3
+[ 303 ms] sampled #4, queue 3/3
+[ 351 ms]   stored #2, 250 ms old
+[ 404 ms] sampled #5, queue 3/3
+[ 505 ms] queue full, dropped #3
+[ 505 ms] sampled #6, queue 3/3
+[ 606 ms] queue full, dropped #4
+[ 606 ms] sampled #7, queue 3/3
+[ 702 ms]   stored #5, 298 ms old
+[ 707 ms] sampled #8, queue 3/3
+[ 808 ms] sampler done
+[1053 ms]   stored #6, 548 ms old
+[1404 ms]   stored #7, 798 ms old
+[1755 ms]   stored #8, 1048 ms old
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Compare the readings stored, and their ages, with Exercise~\ref{c4:ex:1.1}. Which policy does a
+    temperature logger want? Which would a queue of commands want?
+  \item Make the queue 8 readings long. Is anything dropped now? How old is the last reading when it is
+    stored? Did the bigger queue help?
+  \item How much RAM does the queue’s buffer use on \code{native_sim/native/64}, and when is it allocated?
+  \item Dropping the oldest takes two calls, a get and a put. Why is that safe in this program, and when
+    would it not be?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Priority inversion}
+\label{c4:set:2}
+Create an application named \code{exercise2} to work in for this exercise set.
+
+\exercise{A log behind a semaphore}{Code}
+\label{c4:ex:2.1}
+In this exercise you will produce priority inversion, measure it, and fix it.
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{prj.conf}, set \code{CONFIG_SYS_CLOCK_TICKS_PER_SEC=1000}.
+  \item Create a \code{Kconfig} file with a menu named \code{Application} holding a \code{bool} option
+    \code{APP_USE_MUTEX}, with the prompt \code{Protect the log with a k_mutex instead of a k_sem}, and
+    end it so that Zephyr’s own options are still available. The option stays unused until
+    Exercise~\ref{c4:ex:2.2}.
+  \item In \code{src/main.c}, protect a shared log with a binary semaphore named \code{log_lock}, created
+    available (initial count 1, limit 1).
+  \item Write a function \code{trace(who, what)} that prints \code{[<t> ms] <who> (priority <p>) <what>},
+    with the uptime as \code{\%4lld}, \code{who} left-aligned in 7 characters (\code{\%-7s}), and the
+    calling thread’s current priority from \code{k_thread_priority_get()}.
+  \item Write a function \code{compute(ms)} that uses CPU time by calling \code{k_busy_wait(USEC_PER_MSEC)}
+    \code{ms} times.
+  \item Write three threads, all with a stack of 1024 bytes:
+\begin{itemize}
+  \item \code{logger}, priority \textbf{9}, no start delay: traces \code{takes the lock}, takes it, computes
+    for \textbf{60} ms, traces \code{gives the lock back}, and gives it back.
+  \item \code{control}, priority \textbf{5}, start delay \textbf{10} ms: records the uptime, traces
+    \code{needs the lock}, takes it, traces \code{has the lock}, gives it back, and prints \code{control
+    waited <ms> ms}, the time since the uptime it recorded.
+  \item \code{network}, priority \textbf{7}, start delay \textbf{20} ms: traces \code{starts sending},
+    computes for \textbf{300} ms, and traces \code{is done}.
+\end{itemize}
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+[   0 ms] logger  (priority 9) takes the lock
+[  11 ms] control (priority 5) needs the lock
+[  21 ms] network (priority 7) starts sending
+[ 321 ms] network (priority 7) is done
+[ 360 ms] logger  (priority 9) gives the lock back
+[ 360 ms] control (priority 5) has the lock
+control waited 349 ms
+\end{console}
+
+\noindent \textbf{Hint:} why \code{compute()} busy-waits one millisecond at a time rather than
+calling \code{k_busy_wait(60000)} once is in \secref{c4:app:a}, \emph{On \code{native_sim}: making a
+thread use CPU time}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Before you run it, predict how long \code{control} waits. Then account for the 349 ms, millisecond
+    by millisecond: who ran when?
+  \item \code{network} never touches the lock. How did it delay \code{control} by 300 ms?
+\end{itemize}
+
+\exercise{The mutex}{Code}
+\label{c4:ex:2.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item When \code{CONFIG_APP_USE_MUTEX} is enabled, protect the log with a \code{k_mutex} named
+    \code{log_lock} instead of the semaphore, and change nothing else. Hide the difference behind two
+    macros, such as \code{lock()} and \code{unlock()}, so that the threads’ code is the same in both
+    builds.
+  \item Create a file \code{mutex.conf} that enables the option.
+\end{itemize}
+
+Built with \code{-DEXTRA_CONF_FILE=mutex.conf}, the output must be:
+
+\begin{console}
+[   0 ms] logger  (priority 9) takes the lock
+[  11 ms] control (priority 5) needs the lock
+[  60 ms] logger  (priority 5) gives the lock back
+[  60 ms] control (priority 5) has the lock
+control waited 49 ms
+[  60 ms] network (priority 7) starts sending
+[ 360 ms] network (priority 7) is done
+\end{console}
+
+\noindent Built without it, the output must be unchanged from Exercise~\ref{c4:ex:2.1}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Why is \code{logger}’s priority 5 when it gives the lock back? What is it after the unlock?
+  \item \code{network} was ready at 21 ms. Why does it only start sending at 60 ms?
+  \item \code{control} still waited 49 ms. Could any lock bring that down to zero? What would?
+  \item With the mutex, make \code{control} wait at most 20 ms, with \code{k_mutex_lock(&log_lock, K_MSEC(20))},
+and trace \code{gave up} when that fails. What happens to \code{logger}’s priority when
+\code{control} gives up, and what does \code{network} do then?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{A battery on zbus}
+\label{c4:set:3}
+Create an application named \code{exercise3} to work in for this exercise set.
+
+\exercise{The channel and a listener}{Code}
+\label{c4:ex:3.1}
+In this exercise you will publish battery readings on a zbus channel, and react to them.
+
+\task{Tasks}
+\begin{itemize}
+  \item Enable zbus in \code{prj.conf}.
+  \item Define the message type:
+\begin{ccode}
+struct battery_msg {
+  uint8_t percent;
+  bool charging;
+};
+\end{ccode}
+  \item Define a channel named \code{battery_chan}, initially \code{\{.percent = 100, .charging = false\}},
+    with a validator that rejects any message with \code{percent} above 100.
+  \item Define a listener named \code{led}, observing the channel, whose callback prints \code{  led: red}
+    (two spaces first) when the battery is below 20 \% and not charging, and \code{  led: green}
+    otherwise.
+  \item Write a thread \code{gauge}, priority \textbf{6}, stack 1024, no start delay, that publishes these
+    readings, in this order:
+\begin{ccode}
+static const struct battery_msg readings[] = {
+  {.percent = 80, .charging = false}, {.percent = 15, .charging = false},
+  {.percent = 150, .charging = false}, {.percent = 15, .charging = true},
+  {.percent = 60, .charging = true},
+};
+\end{ccode}
+
+\noindent For each, it prints \code{gauge: <percent> \%}, followed by \code{, charging} if the
+battery is charging, publishes the reading with a timeout of 50 ms, prints \code{gauge: rejected} if
+the channel rejected it, and sleeps 100 ms.
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+gauge: 80 %
+  led: green
+gauge: 15 %
+  led: red
+gauge: 150 %
+gauge: rejected
+gauge: 15 %, charging
+  led: green
+gauge: 60 %, charging
+  led: green
+\end{console}
+
+\noindent \textbf{Hint:} A listener callback reads the message in place with
+\code{zbus_chan_const_msg(chan)}. In a format string, \code{\%\%} prints a percent sign.
+
+\task{Reflection}
+\begin{itemize}
+  \item In which thread does the \code{led} callback run? Check it: enable \code{CONFIG_THREAD_NAME=y}, and
+    print \code{k_thread_name_get(k_current_get())} in the callback.
+  \item What number does \code{zbus_chan_pub()} return for the 150 \% reading on \code{native_sim}? Why
+    should the code compare it with \code{-ENOMSG} rather than with that number?
+\end{itemize}
+
+\exercise{A display that subscribes}{Code}
+\label{c4:ex:3.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item Define a subscriber named \code{display}, with a notification queue of \textbf{4}, and add it to the
+    channel’s observers after \code{led}.
+  \item Write a thread \code{display_thread}, priority \textbf{7}, stack 1024, no start delay, which forever
+    waits for a notification, reads the channel, and prints \code{  display: <percent> \%}, followed by
+    \code{, charging} if the battery is charging.
+\end{itemize}
+
+The output must now be:
+
+\begin{console}
+gauge: 80 %
+  led: green
+  display: 80 %
+gauge: 15 %
+  led: red
+  display: 15 %
+gauge: 150 %
+gauge: rejected
+gauge: 15 %, charging
+  led: green
+  display: 15 %, charging
+gauge: 60 %, charging
+  led: green
+  display: 60 %, charging
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Remove the gauge’s 100 ms sleep. What does the display print now, and why? Did it receive four
+    notifications?
+  \item Keep the sleep removed, and give \code{display_thread} priority 5, above the gauge. What does the
+    display print now?
+  \item Why does the \code{led} never miss a reading, whatever the priorities?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{A garage door as a state machine}
+\label{c4:set:4}
+Create an application named \code{exercise4} to work in for this exercise set, with
+\code{target_sources(app PRIVATE src/main.c src/door.c)} in its \code{CMakeLists.txt}.
+
+\exercise{The state machine}{Code}
+\label{c4:ex:4.1}
+In this exercise you will write a hierarchical state machine with SMF, behind an API that tests can
+drive directly.
+
+\task{Tasks}
+Copy this header into \code{src/door.h} unchanged. It is the interface the tests use:
+
+\begin{ccode}
+#ifndef DOOR_H_
+#define DOOR_H_
+
+#include <stdbool.h>
+
+/** What can happen to the door. */
+enum door_event {
+	DOOR_EVENT_BUTTON,   /**< The button was pressed. */
+	DOOR_EVENT_OPENED,   /**< The door reached its top end switch. */
+	DOOR_EVENT_CLOSED,   /**< The door reached its bottom end switch. */
+	DOOR_EVENT_OBSTACLE, /**< The light barrier saw something in the way. */
+};
+
+/** The states the door can be in. */
+enum door_state {
+	DOOR_STATE_CLOSED,
+	DOOR_STATE_OPENING,
+	DOOR_STATE_OPEN,
+	DOOR_STATE_CLOSING,
+	DOOR_STATE_STOPPED,
+};
+
+/** @brief Start the state machine, in the closed state, with the motor off
+ *         and never started. */
+void door_init(void);
+
+/** @brief Run the state machine once, for one event. */
+void door_handle(enum door_event event);
+
+/** @brief Return the state the door is in. */
+enum door_state door_get_state(void);
+
+/** @brief Return whether the motor is running. */
+bool door_motor_on(void);
+
+/** @brief Return how many times the motor has been started since door_init(). */
+unsigned int door_motor_starts(void);
+
+#endif /* DOOR_H_ */
+\end{ccode}
+
+\noindent In \code{prj.conf}, enable SMF with parent states. In \code{src/door.c}, implement the
+header with SMF, with these six states:
+
+\begin{booktable}{@{}llp{9.5em}L@{}}
+  \thead{State} & \thead{Parent} & \thead{Entry} & \thead{Handles} \\
+  \midrule
+  \code{MOVING} & none & Motor on, and count the start & \code{BUTTON}: go to \code{STOPPED}. Every other event: ignore it. Exit: motor off. \\
+  \code{CLOSED} & none &  & \code{BUTTON}: go to \code{OPENING}. \\
+  \code{OPENING} & \code{MOVING} &  & \code{OPENED}: go to \code{OPEN}. Anything else: pass it to the parent. \\
+  \code{OPEN} & none &  & \code{BUTTON}: go to \code{CLOSING}. \\
+  \code{CLOSING} & \code{MOVING} &  & \code{CLOSED}: go to \code{CLOSED}. \code{OBSTACLE}: go to \code{OPENING}. Anything else: pass it to the parent. \\
+  \code{STOPPED} & none &  & \code{BUTTON}: go to \code{CLOSING}. \\
+\end{booktable}
+
+Events a state does not list are ignored. \code{door_get_state()} returns the state the door is in,
+and \code{MOVING} is never one: the door is always in one of the five states of the header.
+
+\textbf{Hint:} \code{MOVING}’s entry and exit actions are the only code that touches the motor. Keep
+the state in a variable that each leaf state’s entry action sets.
+
+\exercise{Drive it}{Code}
+\label{c4:ex:4.2}
+
+\task{Tasks}
+In \code{src/main.c}, call \code{door_init()}, print the door’s status as \code{start}, and then
+handle these events one at a time, printing the status after each, labelled with the event’s name:
+
+\begin{ccode}
+static const enum door_event script[] = {
+	DOOR_EVENT_BUTTON,   DOOR_EVENT_OBSTACLE, DOOR_EVENT_OPENED,
+	DOOR_EVENT_BUTTON,   DOOR_EVENT_OBSTACLE, DOOR_EVENT_OPENED,
+	DOOR_EVENT_BUTTON,   DOOR_EVENT_BUTTON,   DOOR_EVENT_BUTTON,
+	DOOR_EVENT_CLOSED,   DOOR_EVENT_OBSTACLE,
+};
+\end{ccode}
+
+\noindent Print each status with \code{"\%-8s -> \%-7s motor \%-3s (started \%u times)\\n"}: the
+label, the state’s name, \code{on} or \code{off}, and the number of motor starts. The output must
+be:
+
+\begin{console}
+start    -> CLOSED  motor off (started 0 times)
+BUTTON   -> OPENING motor on  (started 1 times)
+OBSTACLE -> OPENING motor on  (started 1 times)
+OPENED   -> OPEN    motor off (started 1 times)
+BUTTON   -> CLOSING motor on  (started 2 times)
+OBSTACLE -> OPENING motor on  (started 2 times)
+OPENED   -> OPEN    motor off (started 2 times)
+BUTTON   -> CLOSING motor on  (started 3 times)
+BUTTON   -> STOPPED motor off (started 3 times)
+BUTTON   -> CLOSING motor on  (started 4 times)
+CLOSED   -> CLOSED  motor off (started 4 times)
+OBSTACLE -> CLOSED  motor off (started 4 times)
+\end{console}
+
+\noindent The tests also drive \code{door.c} directly, without \code{main.c}, through sequences of
+events the script does not contain.
+
+\task{Reflection}
+\begin{itemize}
+  \item \code{OBSTACLE} while closing sends the door back to \code{OPENING}, and the motor start count stays
+    at 2. Which rule of SMF makes that happen?
+  \item Which state handles \code{OBSTACLE} while the door is opening, and what does it do with it?
+  \item Change \code{OPENING}’s run action to return \code{SMF_EVENT_HANDLED} for every event. What happens
+    when the button is pressed while the door is opening? Which tests fail?
+  \item Remove \code{CONFIG_SMF_ANCESTOR_SUPPORT=y} from \code{prj.conf}. Does it still build? What does the
+    program print now, and why?
+  \item Why can \code{door.c} be tested without threads, timers, or \code{native_sim}’s clock?
+\end{itemize}

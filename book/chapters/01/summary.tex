@@ -1,0 +1,48 @@
+% Section 1.3, from lectures/L01/README.md: the objectives, the evaluation
+% questions, and the next lecture.
+
+\section{Review}
+\label{c1:sec:review}
+
+\needspace{6\baselineskip}
+\subsection*{What you should be able to do now}
+After this chapter, you should:
+
+\begin{itemize}
+  \item Be able to set up the workspace and build and run an application on \code{native_sim}.
+  \item Understand what the west manifest pins, and where Zephyr lives in the workspace.
+  \item Understand the three files every Zephyr application has, and what each one contributes.
+  \item Understand the order in which a Zephyr build configures itself: board, devicetree, Kconfig, CMake.
+  \item Be able to find the configuration a build ended up with, in \code{.config} and in menuconfig.
+  \item Be able to add Kconfig options of your own and use them from C and CMake.
+  \item Be able to log at the right level, and to change which levels a build keeps.
+\end{itemize}
+
+\needspace{6\baselineskip}
+\subsection*{Questions to test yourself}
+You should be able to explain:
+
+\begin{enumerate}
+  \item What does west do, and what does the manifest \code{west.yml} pin?
+  \item What are the roles of \code{CMakeLists.txt}, \code{prj.conf} and devicetree in a Zephyr build?
+  \item Where does a Kconfig option’s final value come from, and where can you read it after a build?
+  \item Why does the build abort when \code{prj.conf} sets an option whose dependencies are not met?
+  \item Why is a misspelled \code{CONFIG_} macro in C more dangerous than a misspelled option in
+    \code{prj.conf}?
+  \item What is the difference between \code{\#ifdef CONFIG_X} and \code{IS_ENABLED(CONFIG_X)}?
+  \item Why does \code{k_msleep(1000)} on \code{native_sim} wake up after 1010 ms?
+  \item What does a log module’s level control, and why is a filtered-out message not in the binary?
+\end{enumerate}
+
+\needspace{6\baselineskip}
+\subsection*{Looking ahead}
+Chapter~\ref{c2:ch} is about devicetree:
+
+\begin{itemize}
+  \item How a board and its peripherals are described: nodes, properties, labels and aliases.
+  \item Bindings, which say what a node’s properties mean.
+  \item Overlays, which change a board’s devicetree for one application.
+  \item Getting devices and properties from C at compile time.
+\end{itemize}
+
+You will blink an LED and read a button through Zephyr’s emulated GPIO controller.

@@ -1,0 +1,62 @@
+% The Zephyr build, in the order it happens: what each step reads, what it writes, and where the
+% two phases divide. Drawn to match §1.2's "What happens when", so the figure and the text name
+% the same files.
+%
+% The inks say what kind of thing something is, as they do in the code blocks: green for what the
+% build is configured with (devicetree and Kconfig), blue for the build system itself, red for C
+% and the program it becomes.
+\begin{tikzpicture}[
+    x=1cm, y=1cm, font=\footnotesize,
+    stage/.style={draw=#1, fill=fill#1, line width=0.7pt, rounded corners=1.5pt,
+      minimum width=3.15cm, minimum height=0.78cm, align=center, font=\small\bfseries,
+      text=#1!60!black},
+    artifact/.style={align=left, anchor=west, font=\scriptsize\ttfamily, text=ink},
+    input/.style={align=right, anchor=east, font=\scriptsize\ttfamily, text=muted},
+    flow/.style={-{Latex[length=2mm]}, line width=0.9pt, ink},
+    feed/.style={-{Latex[length=1.6mm]}, line width=0.5pt, muted},
+    writes/.style={-{Latex[length=1.6mm]}, line width=0.5pt, rule},
+  ]
+  % One row per step, top to bottom.
+  \def\x{0}
+  \def\ya{0} \def\yb{-1.55} \def\yc{-3.1} \def\yd{-4.65} \def\ye{-6.5}
+
+  \node[stage=muted] (board) at (\x, \ya) {1\enspace Board};
+  \node[stage=accent3] (dt) at (\x, \yb) {2\enspace Devicetree};
+  \node[stage=accent3] (kconfig) at (\x, \yc) {3\enspace Kconfig};
+  \node[stage=accent2] (cmake) at (\x, \yd) {4\enspace CMake};
+  \node[stage=accent] (ninja) at (\x, \ye) {5\enspace Ninja};
+
+  \draw[flow] (board) -- (dt);
+  \draw[flow] (dt) -- (kconfig);
+  \draw[flow] (kconfig) -- (cmake);
+  \draw[flow] (cmake) -- (ninja);
+
+  % What each step reads, on the left.
+  \node[input] (iboard) at (\x-2.2, \ya) {-b native\_sim/native/64};
+  \node[input] (idt) at (\x-2.2, \yb) {native\_sim.dts, app.overlay};
+  \node[input] (ikconfig) at (\x-2.2, \yc) {Kconfig, prj.conf,\\-DCONFIG\_...};
+  \node[input] (icmake) at (\x-2.2, \yd) {CMakeLists.txt};
+  \node[input] (ininja) at (\x-2.2, \ye) {src/*.c, Zephyr's sources};
+  \foreach \n in {iboard, idt, ikconfig, icmake, ininja} {
+    \draw[feed] (\n.east) -- ++(0.35, 0);
+  }
+
+  % What each step writes, on the right.
+  \node[artifact] (aboard) at (\x+2.2, \ya) {the SoC, the arch,\\the board's defaults};
+  \node[artifact] (adt) at (\x+2.2, \yb) {build/zephyr/zephyr.dts\\devicetree\_generated.h};
+  \node[artifact] (akconfig) at (\x+2.2, \yc) {build/zephyr/.config\\autoconf.h};
+  \node[artifact] (acmake) at (\x+2.2, \yd) {build/build.ninja};
+  \node[artifact, text=accent!70!black] (aninja) at (\x+2.2, \ye)
+    {build/zephyr/zephyr.exe};
+  \foreach \n in {aboard, adt, akconfig, acmake, aninja} {
+    \draw[writes] (\n.west) -- ++(-0.35, 0);
+  }
+
+  % The two phases, named beside a rule, which costs less width than a brace and its label.
+  \draw[rule, line width=0.6pt] (\x-5.75, \ya+0.45) -- (\x-5.75, \yd-0.45);
+  \node[rotate=90, anchor=south, font=\scriptsize\scshape\lsstyle, text=ink]
+    at (\x-5.8, {(\ya+\yd)/2}) {configuration};
+  \draw[rule, line width=0.6pt] (\x-5.75, \ye+0.45) -- (\x-5.75, \ye-0.45);
+  \node[rotate=90, anchor=south, font=\scriptsize\scshape\lsstyle, text=ink]
+    at (\x-5.8, \ye) {compilation};
+\end{tikzpicture}

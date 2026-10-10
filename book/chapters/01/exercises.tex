@@ -1,0 +1,277 @@
+% Section 1.4, from lectures/L01/appendix/c_exercises.md.
+
+\section{Exercises}
+\label{c1:sec:exercises}\label{c1:app:c}
+These exercises reinforce the concepts from \secref{c1:app:b}.
+
+\begin{aside}
+\textbf{How to check your work.} Write each exercise set as its own application under
+\file{lectures/L01/exercises}, with the file names given there, and run \code{make test} from the
+repository root. A set’s tests switch on as soon as its files exist, and a set you have not started
+is reported as \code{SKIP}. Each application grows through its set, and the tests check where it
+ends up. Programs run on \code{native_sim} in simulated time, so their output, timestamps included,
+is compared with the expected output line by line.
+
+The solutions are published in the companion repository, under
+\file{lectures/L01/appendix/solutions}, a few days after the lecture. Try each exercise yourself
+before you read them.
+\end{aside}
+
+Remember \code{source env.sh} in every new terminal. Build and run an exercise from the repository
+root:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L01/exercises/exercise1
+west build -t run
+\end{shell}
+
+% ---------------------------------------------------------------------
+\exerciseset{A first application}
+\label{c1:set:1}
+Create a directory named \code{exercise1} to work in for this exercise set.
+
+\exercise{The three files}{Code}
+\label{c1:ex:1.1}
+In this exercise you will create the smallest Zephyr application that builds.
+
+\task{Tasks}
+Create these files in \code{exercise1}:
+
+\begin{itemize}
+  \item \code{CMakeLists.txt}: require CMake 3.20, find the Zephyr package, name the project
+    \code{exercise1}, and add \code{src/main.c} to the \code{app} target.
+  \item \code{prj.conf}: an empty file, or one holding only a comment.
+  \item \code{src/main.c}: a \code{main()} that prints \code{Hello, Zephyr!} with \code{printk()} and
+    returns \code{0}.
+\end{itemize}
+
+Build and run the application.
+
+\task{Reflection}
+\begin{itemize}
+  \item What happens if you delete \code{prj.conf} and build again with \code{-p}?
+  \item The program prints its greeting and then keeps running. Why does it not exit when \code{main()}
+    returns? How do you stop it?
+  \item Where in \code{build/} is the program you ran?
+\end{itemize}
+
+\exercise{The uptime}{Code}
+\label{c1:ex:1.2}
+
+\task{Tasks}
+Extend \code{main()} so that after the greeting it prints the uptime three times, with
+\code{k_msleep(1000)} after each print:
+
+\begin{console}
+Hello, Zephyr!
+Uptime: 0 ms
+Uptime: 1010 ms
+Uptime: 2020 ms
+\end{console}
+
+Use \code{k_uptime_get()}, which returns an \code{int64_t}, printed with \code{\%lld}.
+
+Run the program with \code{./build/zephyr/zephyr.exe -stop_at=5}, and then again with
+\code{-stop_at=5 -no-rt}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Why is the second uptime 1010 ms and not 1000 ms? Find the option in \code{build/zephyr/.config}
+    that decides it.
+  \item What is the difference between the two runs? Is the output different?
+  \item Would the uptimes be the same if the host were busy compiling something else at the same time? Why?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Logging}
+\label{c1:set:2}
+Create an application named \code{exercise2} to work in for this exercise set, with the same three
+files as \code{exercise1}.
+
+\exercise{A temperature monitor}{Code}
+\label{c1:ex:2.1}
+In this exercise you will replace \code{printk()} with the logging subsystem.
+
+\task{Tasks}
+\begin{itemize}
+  \item Enable logging in \code{prj.conf}.
+  \item Register a log module named \code{monitor} \textbf{without} giving a level:
+    \code{LOG_MODULE_REGISTER(monitor);}.
+  \item In \code{main.c}, define the readings as an array:
+\begin{ccode}
+static const int readings[] = {21, 24, 28, 33, 36, 29};
+\end{ccode}
+  \item In \code{main()}, go through the readings, and for each one log:
+\begin{itemize}
+  \item \code{Temperature <t> C is critical} as an error, if it is 35 or more.
+  \item \code{Temperature <t> C is high} as a warning, if it is 30 or more.
+  \item \code{Temperature <t> C} as information, otherwise.
+\end{itemize}
+  \item Sleep 500 ms after each reading.
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+[00:00:00.000,000] <inf> monitor: Temperature 21 C
+[00:00:00.510,000] <inf> monitor: Temperature 24 C
+[00:00:01.020,000] <inf> monitor: Temperature 28 C
+[00:00:01.530,000] <wrn> monitor: Temperature 33 C is high
+[00:00:02.040,000] <err> monitor: Temperature 36 C is critical
+[00:00:02.550,000] <inf> monitor: Temperature 29 C
+\end{console}
+
+\note[Hint] \code{ARRAY_SIZE(readings)}, from \code{<zephyr/sys/util.h>}, which
+\code{<zephyr/kernel.h>} includes, gives the number of elements.
+
+\exercise{Only what matters}{Code}
+\label{c1:ex:2.2}
+
+\task{Tasks}
+Without changing any file, build the application so that it logs only warnings and errors, by
+setting the default log level on the command line:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L01/exercises/exercise2 -- -DCONFIG_LOG_DEFAULT_LEVEL=2
+\end{shell}
+
+\noindent The output must now be only:
+
+\begin{console}
+[00:00:01.530,000] <wrn> monitor: Temperature 33 C is high
+[00:00:02.040,000] <err> monitor: Temperature 36 C is critical
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Why did this change the monitor’s output, when the command line said nothing about \code{monitor}?
+  \item Would it still work if the module were registered as \code{LOG_MODULE_REGISTER(monitor,
+    LOG_LEVEL_INF)}?
+  \item Are the information messages still in the program, only not printed? Explain how you know.
+  \item After this build, run \code{west build -t run} a few times, and then build again \textbf{without}
+    \code{-p} and without the \code{-D} option. Which log level does that build use? Look for the answer
+    in \code{build/zephyr/.config}, and explain it.
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Options of your own}
+\label{c1:set:3}
+Create an application named \code{exercise3} to work in for this exercise set.
+
+\exercise{The threshold}{Code}
+\label{c1:ex:3.1}
+In this exercise you will give the application Kconfig options of its own.
+
+\task{Tasks}
+\begin{itemize}
+  \item Create a \code{Kconfig} file in \code{exercise3} with a menu named \code{Application}, holding:
+\begin{itemize}
+  \item \code{APP_HIGH_C}, an \code{int} with the prompt \code{Temperature at which a reading is high, in
+    degrees Celsius}, a range from -40 to 125, and a default of 30.
+\end{itemize}
+  \item End the file so that Zephyr’s own options are still available.
+  \item In \code{prj.conf}, set \code{APP_HIGH_C} to 25.
+  \item In \code{src/main.c}, go through these readings, printing each with \code{printk()}, and mark those
+    at or above \code{CONFIG_APP_HIGH_C} with \code{ (high)}:
+\begin{ccode}
+static const int readings[] = {-18, 21, 24, 28, 33};
+\end{ccode}
+\end{itemize}
+
+The output must be:
+
+\begin{console}
+-18 C
+21 C
+24 C
+28 C (high)
+33 C (high)
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Find \code{APP_HIGH_C} in \code{west build -t menuconfig}. What does \code{?} show about it?
+  \item Set \code{CONFIG_APP_HIGH_C=200} in \code{prj.conf} and build. What happens, and why is that better
+    than the alternative?
+  \item Remove the last line of your \code{Kconfig} file and build with \code{-p}. What happens?
+\end{itemize}
+
+\exercise{Fahrenheit, when asked for}{Code}
+\label{c1:ex:3.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item Add a \code{bool} option \code{APP_FAHRENHEIT} to the \code{Application} menu, with the prompt
+    \code{Print temperatures in degrees Fahrenheit}.
+  \item Create \code{src/convert.h} and \code{src/convert.c} with a function:
+\begin{ccode}
+int celsius_to_fahrenheit(int celsius);
+\end{ccode}
+which returns the temperature in degrees Fahrenheit, \textbf{rounded to the nearest degree}, using
+only integer arithmetic. For example, 37 °C is 98.6 °F, which rounds to 99, and -18 °C is -0.4 °F,
+which rounds to 0.
+  \item In \code{CMakeLists.txt}, compile \code{src/convert.c} \textbf{only} when
+    \code{CONFIG_APP_FAHRENHEIT} is enabled.
+  \item In \code{main()}, when the option is enabled, print each reading in Fahrenheit, as \code{<t> F},
+    still marked \code{ (high)} by its value in Celsius. Use \code{IS_ENABLED()}, not \code{\#ifdef}.
+  \item Create a file \code{fahrenheit.conf} in \code{exercise3} that enables the option.
+\end{itemize}
+
+Built with \code{-DEXTRA_CONF_FILE=fahrenheit.conf}, the output must be:
+
+\begin{console}
+0 F
+70 F
+75 F
+82 F (high)
+91 F (high)
+\end{console}
+
+\noindent Built without it, the output must be unchanged from Exercise~\ref{c1:ex:3.1}.
+
+\note[Hint] Work in tenths of a degree: 37 °C is 986 tenths of a degree Fahrenheit. C’s integer
+division truncates towards zero, so \code{(tenths + 5) / 10} rounds a positive number of tenths to
+the nearest degree, but not a negative one.
+
+\task{Reflection}
+\begin{itemize}
+  \item Without \code{fahrenheit.conf}, \code{convert.c} is not compiled, yet \code{main.c} still calls
+    \code{celsius_to_fahrenheit()}. Why does the program link?
+  \item Would it still link with \code{\#ifdef CONFIG_APP_FAHRENHEIT} around the call instead? Which of the
+    two would you rather maintain, and why?
+  \item Change \code{IS_ENABLED(CONFIG_APP_FAHRENHEIT)} to \code{IS_ENABLED(CONFIG_APP_FARENHEIT)} and build
+    with \code{fahrenheit.conf}. What happens? What would have caught it?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Reading the workspace and the build}
+\label{c1:set:4}
+No code in this set: answer the questions by looking. Use the build of any exercise above.
+
+\exercise[fillaccent2]{The workspace}{Reflection}
+\label{c1:ex:4.1}
+
+\task{Tasks}
+Answer, using west’s commands rather than by opening files:
+
+\begin{itemize}
+  \item Which revision of Zephyr is the workspace using, and where is it checked out?
+  \item Which configuration value makes \code{west build} work without \code{-b}?
+\end{itemize}
+
+\exercise[fillaccent2]{The build}{Reflection}
+\label{c1:ex:4.2}
+
+\task{Tasks}
+Answer, by looking in the build directory:
+
+\begin{itemize}
+  \item Which log mode (\code{CONFIG_LOG_MODE_...}) did the \code{exercise2} build use? Why that one?
+  \item What is the value of \code{CONFIG_BOARD}, and what is the value of \code{CONFIG_BOARD_TARGET}? Why
+    are they different?
+  \item How many \code{\#define} lines does \code{autoconf.h} hold? Does it contain the options that are
+    \code{n}?
+  \item Find the definition of \code{k_msleep()} with \code{grep -n -A3 "k_msleep(int32_t ms)"
+    deps/zephyr/include/zephyr/kernel.h}. What does it call, and what does \code{static inline} mean for
+    whether \code{k_msleep} exists as a function in your program?
+\end{itemize}

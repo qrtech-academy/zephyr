@@ -1,0 +1,50 @@
+% Section 4.3, from lectures/L04/README.md: the objectives, the evaluation
+% questions, and the next lecture.
+
+\section{Review}
+\label{c4:sec:review}
+
+\needspace{6\baselineskip}
+\subsection*{What you should be able to do now}
+After this chapter, you should:
+
+\begin{itemize}
+  \item Be able to choose the right kernel object for a synchronization or communication problem.
+  \item Understand why a semaphore used as a lock allows unbounded priority inversion, and a mutex does not.
+  \item Be able to pass data between threads with a message queue, and handle a full queue deliberately.
+  \item Understand how Zephyr applications avoid dynamic memory, and what to use when they cannot.
+  \item Be able to decouple an application’s parts with zbus channels, and choose between its kinds of
+    observer.
+  \item Be able to express a device’s behaviour as a hierarchical state machine with SMF.
+\end{itemize}
+
+\needspace{6\baselineskip}
+\subsection*{Questions to test yourself}
+You should be able to explain:
+
+\begin{enumerate}
+  \item What is the difference between a semaphore and a mutex, beyond the count?
+  \item What is priority inversion, and why is the medium-priority thread the one that makes it unbounded?
+  \item How does priority inheritance bound it, and what does it not solve?
+  \item When should a producer use \code{K_NO_WAIT} on a full queue, and when a timeout?
+  \item Why do Zephyr applications usually allocate kernel objects and buffers statically?
+  \item What is the difference between a zbus listener, a subscriber and a message subscriber, and in which
+    thread does each one run?
+  \item Why can a zbus subscriber miss a message, and which observer cannot?
+  \item What does a parent state in SMF save you from writing?
+  \item On \code{native_sim}, why must a thread that simulates CPU work use \code{k_busy_wait()} rather than
+    a loop?
+\end{enumerate}
+
+\needspace{6\baselineskip}
+\subsection*{Looking ahead}
+Chapter~\ref{c5:ch} is about writing a driver:
+
+\begin{itemize}
+  \item The device driver model: API structs, config and data, instances and init levels.
+  \item A binding and a Kconfig option for a new part.
+  \item Emulators: hardware that exists only in software, on \code{native_sim}’s I2C bus.
+  \item Testing the driver with ztest, and running the tests with Twister.
+\end{itemize}
+
+You will write a driver for an I2C temperature sensor that does not exist.

@@ -1,0 +1,750 @@
+% Section 2.1, from lectures/L02/appendix/a_devicetree.md.
+
+\section{Devicetree}
+\label{c2:sec:devicetree}\label{c2:app:a}
+This section covers how Zephyr describes hardware: the devicetree language, the board’s tree and the
+overlays that change it, the bindings that give it meaning, and the macros that turn it into C. It
+ends with GPIO, the first device API this book uses, on \code{native_sim}’s emulated GPIO
+controller. By the end you should be able to explain every file in the
+\file{lectures/L02/examples/blinky}, \file{lectures/L02/examples/button} and
+\file{lectures/L02/examples/bindings} examples, and every devicetree error their READMEs show.
+
+\subsection{Why hardware is data}
+An LED blinker for one board is easy to write: the LED is pin 13 of port B, so the code configures
+pin 13 of port B. The trouble starts with the second board, where the LED is pin 5 of port A and
+lights when the pin is \emph{low}. The usual answer is a header of \code{\#define}s per board, and a
+\code{\#ifdef} per difference, and it grows with every board and every peripheral.
+
+Zephyr’s answer is to describe the hardware in a separate language, \textbf{devicetree}, and to keep
+that description out of the C code entirely. A board says, in its devicetree, \emph{there is an LED,
+it is on this pin of this controller, and it is active low}, and gives the LED a role name,
+\code{led0}. The application asks for \code{led0}, and the build fills in the rest. The same C file
+then builds for every board that has a \code{led0}, unchanged.
+
+Devicetree comes from Open Firmware, by way of Linux, and the language is the same. What Zephyr does
+with it is not. Linux compiles the tree into a binary blob that the kernel \textbf{parses at boot}.
+Zephyr processes the tree \textbf{at build time}, into a C header of macros, and nothing of the tree
+itself is left in the image. There is no lookup at run time, no parsing, and no memory spent on it;
+there is also no way to change the hardware description without rebuilding.
+
+A build uses two kinds of devicetree input:
+
+\begin{booktable}{@{}LLL@{}}
+  \thead{Input} & \thead{What it says} & \thead{Example} \\
+  \midrule
+  \textbf{Devicetree sources}: \code{.dts}, \code{.dtsi} and \code{.overlay} files & \emph{What hardware there is}: nodes and their properties. & \code{led_0 \{ gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>; \};} \\
+  \textbf{Bindings}: \code{.yaml} files & \emph{What the properties mean}: which a node may have, their types, which are required. & \code{gpios: type: phandle-array, required: true} \\
+\end{booktable}
+
+\subsection{The language}
+
+\subsubsection{Nodes and properties}
+A devicetree is a tree of \textbf{nodes}, each with \textbf{properties}. This is a piece of the
+devicetree of \code{native_sim}, the board this book builds for, from
+\code{deps/zephyr/boards/native/native_sim/native_sim.dts}:
+
+\begin{dtscode}
+/ {
+	model = "Native Sim Board";
+	compatible = "zephyr,posix";
+
+	leds: leds {
+		compatible = "gpio-leds";
+
+		led0: led_0 {
+			gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+			label = "Green LED";
+		};
+	};
+
+	i2c0: i2c@100 {
+		status = "okay";
+		compatible = "zephyr,i2c-emul-controller";
+		clock-frequency = <I2C_BITRATE_STANDARD>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x100 4>;
+	};
+
+	gpio0: gpio_emul {
+		status = "okay";
+		compatible = "zephyr,gpio-emul";
+		rising-edge;
+		falling-edge;
+		high-level;
+		low-level;
+		gpio-controller;
+		#gpio-cells = <2>;
+	};
+};
+\end{dtscode}
+
+\noindent Reading it from the outside in:
+
+\begin{itemize}
+  \item \textbf{\code{/}} is the root node. Every other node is a descendant, and is named by its
+    \textbf{path}, like a file: \code{/leds/led_0}.
+  \item \textbf{\code{i2c@100}} is a node name with a \textbf{unit address}, the part after \code{@}. It is
+    the node’s first \code{reg} address, and it makes names unique when there are several of a kind.
+  \item \textbf{\code{gpio0:}} before a node is a \textbf{label}. Labels are how other parts of the tree,
+    and the C code, refer to a node without spelling out its path.
+  \item \textbf{\code{&gpio0}} in a property is a \textbf{phandle}: a reference to the node labelled \code{gpio0}.
+  \item \textbf{\code{gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>}} is a \emph{phandle-array}: a phandle followed by numbers the
+referenced node gives meaning to. \code{gpio0}’s \code{\#gpio-cells = <2>} says each reference takes
+two: the pin, then the flags.
+  \item \textbf{\code{status}} says whether a node is in use. \code{"okay"}, or no \code{status} at all,
+    means enabled; \code{"disabled"} means the node is described, but nothing is built for it.
+  \item \textbf{\code{compatible}} says what the node \emph{is}. It selects the node’s binding, and with it,
+    the driver. The part before the comma names a vendor.
+\end{itemize}
+
+Property values come in a few forms:
+
+\begin{booktable}{@{}lLL@{}}
+  \thead{Form} & \thead{Example} & \thead{Meaning} \\
+  \midrule
+  Nothing & \code{rising-edge;} & A boolean: true if present. \\
+  String & \code{label = "Green LED";} & A string. \\
+  Cells & \code{reg = <0x100 4>;} & 32-bit numbers, in angle brackets. \\
+  Phandle & \code{zephyr,console = &uart0;} & A reference to another node. \\
+  Mixed cells & \code{gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;} & Phandles and numbers in one list. \\
+  String list & \code{compatible = "a,b", "c";} & Several strings, comma-separated. \\
+  Bytes & \code{mac = [00 11 22 33 44 55];} & 8-bit values, in square brackets. \\
+\end{booktable}
+
+\textbf{\code{GPIO_ACTIVE_HIGH} is a C macro.} Devicetree files are run through the C preprocessor
+before anything else reads them, so \code{native_sim.dts} can \code{\#include
+<zephyr/dt-bindings/gpio/gpio.h>}, where \code{GPIO_ACTIVE_LOW} is \code{(1 << 0)} and
+\code{GPIO_PULL_UP} is \code{(1 << 4)}. The preprocessed file is \code{build/zephyr/zephyr.dts.pre}.
+
+\subsubsection{Aliases and chosen}
+Two nodes directly under the root are special, and both hold only phandles:
+
+\begin{dtscode}
+chosen {
+	zephyr,console = &uart0;
+	zephyr,shell-uart = &uart0;
+	zephyr,flash = &flash0;
+};
+
+aliases {
+	led0 = &led0;
+	i2c-0 = &i2c0;
+};
+\end{dtscode}
+
+\begin{itemize}
+  \item \textbf{\code{/aliases}} gives nodes \emph{role names} that applications can rely on across boards.
+    \code{led0} is the first LED, \code{sw0} the first button, wherever a board has them. Zephyr’s
+    samples, and this book’s examples, find their hardware this way.
+  \item \textbf{\code{/chosen}} tells \emph{Zephyr itself} which node to use for a job:
+    \code{zephyr,console} is where \code{printk()} goes.
+\end{itemize}
+
+A node therefore has up to three names: its \textbf{path} (\code{/leds/led_0}), which is unique; its
+\textbf{labels} (\code{led0}), which belong to the source files and are for the tree to refer to
+itself; and the \textbf{aliases} pointing at it (\code{led0}), which are the stable interface to
+applications. The label and the alias here happen to be spelled the same; they are different things,
+and an overlay can point the alias at another node without touching the label.
+
+\subsection{The board’s devicetree}
+A build starts from its board’s devicetree. For \code{native_sim/native/64} that is
+\code{deps/zephyr/boards/native/native_sim/native_sim_64.dts}, which is one line, \code{\#include
+"native_sim.dts"}, which in turn includes \code{posix.dtsi} and \code{skeleton.dtsi}. \code{.dtsi}
+files are fragments shared between boards; a real SoC’s \code{.dtsi} describes every peripheral on
+the chip, mostly \code{status = "disabled"}, and each board enables the ones it wires up.
+
+\code{native_sim}’s tree describes the simulated hardware, and this book uses much of it:
+
+\begin{booktable}{@{}llLL@{}}
+  \thead{Node} & \thead{Label} & \thead{Compatible} & \thead{Used in} \\
+  \midrule
+  \code{/gpio_emul} & \code{gpio0} & \code{zephyr,gpio-emul} & This chapter \\
+  \code{/leds/led_0} & \code{led0} & child of \code{gpio-leds} & This chapter \\
+  \code{/i2c@100} & \code{i2c0} & \code{zephyr,i2c-emul-controller} & Chapter~\ref{c5:ch} \\
+  \code{/flash-controller@0} & \code{flashcontroller0} & \code{zephyr,sim-flash} & Chapter~\ref{c6:ch} \\
+  \code{/uart} & \code{uart0} & \code{zephyr,native-pty-uart} & The console, and Chapter~\ref{c6:ch}’s shell \\
+\end{booktable}
+
+\subsection{Overlays}
+An application changes its board’s devicetree with \textbf{overlays}: devicetree fragments merged on
+top of the board’s tree before anything is generated from it. An overlay can add nodes, change
+properties, and delete either:
+
+\begin{dtscode}
+/* Add nodes under the root. Nodes with the same path are merged, not replaced. */
+/ {
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpio0 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "User button";
+		};
+	};
+
+	aliases {
+		sw0 = &button0;
+	};
+};
+
+/* Change an existing node, found by its label. */
+&gpio0 {
+	status = "disabled";
+};
+
+/* Remove a property, or a whole node. */
+&led0 {
+	/delete-property/ label;
+};
+/delete-node/ &led0;
+\end{dtscode}
+
+\noindent The first block is \file{lectures/L02/examples/button/app.overlay}’s, the second is
+\file{lectures/L02/examples/blinky/broken.overlay}’s deliberately broken overlay. Deleting
+\code{led0} outright breaks the board’s own \code{aliases} node, which still points at it:
+\code{devicetree error: /aliases: undefined node label 'led0'}.
+
+\subsubsection{Which overlays a build uses}
+The build looks for overlays in this order, and \textbf{uses the first that exists}:
+
+\begin{enumerate}
+  \item The files given with \textbf{\code{-DDTC_OVERLAY_FILE=<files>}}. These \emph{replace} everything
+    below.
+  \item \textbf{\code{boards/<board>.overlay}} in the application, with the board target’s slashes written
+    as underscores: \code{boards/native_sim_native_64.overlay}.
+  \item \textbf{\code{<board>.overlay}} in the application directory itself.
+  \item \textbf{\code{app.overlay}}.
+\end{enumerate}
+
+Files given with \textbf{\code{-DEXTRA_DTC_OVERLAY_FILE=<files>}} are then merged on top of
+whichever was chosen, and that is the option to use for an extra overlay. The order is unlike
+Kconfig’s, where a board’s \code{.conf} file is merged \emph{with} \code{prj.conf}: an application
+with both \code{app.overlay} and \code{boards/native_sim_native_64.overlay} gets only the second,
+and the nodes in \code{app.overlay} are silently missing from the build. The build log says which
+files it took:
+
+\begin{console}
+-- Found BOARD.dts: .../deps/zephyr/boards/native/native_sim/native_sim_64.dts
+-- Found devicetree overlay: .../lectures/L02/examples/button/app.overlay
+\end{console}
+
+\subsubsection{The result}
+The merged tree is written to \textbf{\code{build/zephyr/zephyr.dts}}, with every node and property
+annotated with the file and line it came from. That is the file to read when a build does not do
+what the overlay seemed to say:
+
+\begin{dtscode}
+aliases {
+	led0 = &led0;        /* in deps/zephyr/boards/native/native_sim/native_sim.dts:35 */
+	rtc = &rtc;          /* in deps/zephyr/boards/native/native_sim/native_sim.dts:36 */
+	sw0 = &button0;      /* in lectures/L02/examples/button/app.overlay:20 */
+};
+\end{dtscode}
+
+Numbers come out in hex, and macros expanded: the button’s flags are \code{0x11}, \code{GPIO_PULL_UP
+| GPIO_ACTIVE_LOW}.
+
+\subsection{Bindings}
+A devicetree on its own is only syntax: nothing in \code{gpios = <&gpio0 0 0>} says it is a GPIO
+reference, or that an LED must have one. That is what a \textbf{binding} says. A binding is a YAML
+file for one \code{compatible}, and this is Zephyr’s for \code{gpio-leds}, from
+\code{deps/zephyr/dts/bindings/led/gpio-leds.yaml}, without its examples:
+
+\begin{yamlcode}
+description: |
+  Group of GPIO-controlled LEDs.
+
+  Each LED is defined in a child node of the gpio-leds node.
+
+compatible: "gpio-leds"
+
+child-binding:
+  description: GPIO LED child node
+
+  include:
+    - name: led-node.yaml
+      property-allowlist:
+        - label
+
+  properties:
+    gpios:
+      type: phandle-array
+      required: true
+\end{yamlcode}
+
+\code{child-binding} applies to the children of a \code{gpio-leds} node, which is why \code{led_0}
+needs no \code{compatible} of its own. Every node in the tree is checked against its binding, and
+\textbf{macros are generated only for the properties a binding declares}.
+
+\subsubsection{Writing one}
+The \file{lectures/L02/examples/bindings} example has a binding of its own, in
+\code{dts/bindings/qacademy,blink-pattern.yaml}:
+
+\begin{yamlcode}
+compatible: "qacademy,blink-pattern"
+
+include: base.yaml
+
+properties:
+  pattern-name:
+    type: string
+    required: true
+
+  led-gpios:
+    type: phandle-array
+    required: true
+
+  delays-ms:
+    type: array
+    required: true
+
+  repeat:
+    type: int
+    default: 1
+\end{yamlcode}
+
+\begin{booktable}{@{}lL@{}}
+  \thead{Key} & \thead{Meaning} \\
+  \midrule
+  \code{compatible} & The nodes this binding is for. \\
+  \code{include} & Other bindings to inherit properties from. \code{base.yaml} brings the ones every node may have, such as \code{status}, \code{compatible} and \code{reg}. \\
+  \code{type} & \code{boolean}, \code{int}, \code{array} (of ints), \code{uint8-array}, \code{string}, \code{string-array}, \code{phandle}, \code{phandles} or \code{phandle-array}. \\
+  \code{required} & The build fails if a node lacks the property. \\
+  \code{default} & The value when a node does not set it. A property with a default always exists, as far as C can tell. \\
+  \code{enum} & The only values allowed. C gets the value’s index in the list, too. \\
+  \code{child-binding} & A binding for the node’s children. \\
+\end{booktable}
+
+A property whose name ends in \code{-gpios} is by convention a phandle-array of GPIOs, and the GPIO
+macros below take its name.
+
+\subsubsection{Where bindings are found}
+The build searches \code{deps/zephyr/dts/bindings}, \textbf{the application’s own
+\code{dts/bindings}}, and the \code{dts/bindings} of every Zephyr module (Chapter~\ref{c5:ch}).
+Nothing in \code{CMakeLists.txt} names the directory; it is searched because it is there. The top of
+the generated header lists what was searched:
+
+\begin{console}
+ * Directories with bindings:
+ *   .../lectures/L02/examples/bindings/dts/bindings, $ZEPHYR_BASE/dts/bindings
+\end{console}
+
+\noindent The part of a \code{compatible} before the comma is a \textbf{vendor prefix}, and the
+build checks it against \code{vendor-prefixes.txt} files in the same directories. Without the
+example’s own \code{dts/bindings/vendor-prefixes.txt}, a plain build still succeeds, with a warning:
+
+\begin{console}
+node '/pattern-sos' compatible 'qacademy,blink-pattern' has unknown vendor prefix 'qacademy'
+\end{console}
+
+\noindent Twister, which Chapter~\ref{c5:ch} uses to build tests, treats devicetree warnings as
+errors, and fails.
+
+\subsubsection{Nodes without a binding}
+A node whose \code{compatible} has no binding, or that has no \code{compatible} at all and no parent
+with a \code{child-binding}, is still in the tree, and C can find out that it exists. But none of
+its properties get macros. With \code{nobinding \{ count = <5>; \};} in an overlay,
+\code{DT_PROP(DT_PATH(nobinding), count)} does not compile:
+
+\begin{console}
+error: 'DT_N_S_nobinding_P_count' undeclared here (not in a function); did you mean 'DT_N_S_nobinding_PARENT'?
+\end{console}
+
+\noindent There is one exception, made for exactly the case of an application that wants a few
+values of its own without writing a binding: the node \textbf{\code{/zephyr,user}}. Its property
+types are inferred from their values, so this works with no YAML at all:
+
+\begin{dtscode}
+/ {
+	zephyr,user {
+		blink-ms = <200 300>;
+		led-gpios = <&gpio0 4 GPIO_ACTIVE_LOW>;
+	};
+};
+\end{dtscode}
+
+\subsubsection{Errors a binding catches}
+A binding turns mistakes into errors \textbf{before a line of C is compiled}, and names the file and
+line. These are all from Zephyr 4.4.2 builds.
+
+A required property is missing:
+
+\begin{console}
+devicetree error: 'pattern-name' is marked as required in 'properties:' in '.../bindings/dts/bindings/qacademy,blink-pattern.yaml', but does not appear in <Node /pattern-heartbeat in .../bindings/app.overlay:18>
+\end{console}
+
+A value is not in the property’s \code{enum}:
+
+\begin{console}
+devicetree error: value of property 'level' on /probe in .../zephyr/zephyr.dts.pre ('fatal') is not in 'enum' list in .../qacademy,probe.yaml (['info', 'warning', 'critical'])
+\end{console}
+
+A value has the wrong type. This one arrives at the end of a Python traceback, which is easy to
+mistake for a crash of the build system:
+
+\begin{console}
+devicetree.dtlib.DTError: expected property 'limit' on /probe in .../type.overlay:1 to be assigned with 'limit = < (number) >;', not 'limit = "ten";'
+\end{console}
+
+\noindent And two that are not about bindings, but look the same:
+
+\begin{console}
+devicetree error: .../label.overlay:1 (column 1): parse error: undefined node label 'gpio9'
+devicetree error: .../syntax.overlay:1 (column 59): parse error: expected ';' or ','
+\end{console}
+
+\subsubsection{A compatible also chooses a driver}
+For every compatible with an enabled node, the build defines a Kconfig symbol,
+\code{DT_HAS_<COMPATIBLE>_ENABLED}, and drivers depend on it. \code{native_sim}’s \code{gpio0} is
+why \code{build/zephyr/.config} has:
+
+\begin{kconfigcode}
+CONFIG_DT_HAS_ZEPHYR_GPIO_EMUL_ENABLED=y
+CONFIG_GPIO_EMUL=y
+\end{kconfigcode}
+
+\code{CONFIG_GPIO_EMUL} has \code{default y} and \code{depends on DT_HAS_ZEPHYR_GPIO_EMUL_ENABLED}:
+once GPIO is enabled, the driver is built because the devicetree has the part. It works in both
+directions. The \file{lectures/L02/examples/button} example’s \code{buttons} node is
+\code{compatible = "gpio-keys"}, which makes \code{CONFIG_DT_HAS_GPIO_KEYS_ENABLED=y}, but the input
+subsystem is off, so no driver claims the button, and the example handles the pin itself. Build it
+with \code{-DCONFIG_INPUT=y}, and the \code{gpio-keys} input driver is enabled by the same rule, and
+refuses the node, which lacks the key code that driver needs:
+
+\begin{console}
+error: static assertion failed: "zephyr-code must be specified to use the input-gpio-keys driver"
+\end{console}
+
+A \code{compatible} is not a comment. Choose it for the driver that should serve the node.
+
+\subsection{From devicetree to C}
+
+\subsubsection{The generated header}
+The merged tree, checked against its bindings, is turned into
+\textbf{\code{build/zephyr/include/generated/zephyr/devicetree_generated.h}}: some five thousand
+lines of \code{\#define}s for \code{native_sim}, included into every file through
+\code{<zephyr/devicetree.h>}. It is never read by hand in full, but it is worth reading in part,
+because every devicetree macro in C expands into one of its names.
+
+Every node gets a \textbf{node identifier}, a C token made from its path: \code{DT_N}, then
+\code{_S_} for each slash, with the node names lowercased and every character that is not a letter
+or digit turned into \code{_}:
+
+\begin{booktable}{@{}lL@{}}
+  \thead{Path} & \thead{Node identifier} \\
+  \midrule
+  \code{/} & \code{DT_N} \\
+  \code{/leds/led_0} & \code{DT_N_S_leds_S_led_0} \\
+  \code{/i2c@100} & \code{DT_N_S_i2c_100} \\
+  \code{/buttons/button_0} & \code{DT_N_S_buttons_S_button_0} \\
+\end{booktable}
+
+Everything about a node is then a macro named after its identifier. For the button, among many:
+
+\begin{ccode}
+#define DT_N_S_buttons_S_button_0_P_gpios_IDX_0_PH DT_N_S_gpio_emul
+#define DT_N_S_buttons_S_button_0_P_gpios_IDX_0_VAL_pin 1
+#define DT_N_S_buttons_S_button_0_P_gpios_IDX_0_VAL_flags 17
+#define DT_N_S_buttons_S_button_0_P_label "User button"
+#define DT_N_S_buttons_S_button_0_STATUS_okay 1
+#define DT_N_ALIAS_sw0         DT_N_S_buttons_S_button_0
+#define DT_N_NODELABEL_button0 DT_N_S_buttons_S_button_0
+\end{ccode}
+
+\subsubsection{Getting a node identifier}
+Nobody writes \code{DT_N_S_buttons_S_button_0}. These macros build it:
+
+\begin{booktable}{@{}lLL@{}}
+  \thead{Macro} & \thead{Finds the node by} & \thead{Example} \\
+  \midrule
+  \code{DT_ALIAS(alias)} & Alias. The portable way. & \code{DT_ALIAS(sw0)} \\
+  \code{DT_NODELABEL(label)} & Label. & \code{DT_NODELABEL(button0)} \\
+  \code{DT_PATH(...)} & Path, one argument per node. & \code{DT_PATH(buttons, button_0)} \\
+  \code{DT_CHOSEN(prop)} & A \code{/chosen} property. & \code{DT_CHOSEN(zephyr_console)} \\
+  \code{DT_INST(inst, compat)} & Instance number of a compatible. & \code{DT_INST(0, gpio_keys)} \\
+\end{booktable}
+
+The arguments are written as C tokens: dashes and commas become underscores, so the alias
+\code{i2c-0} is \code{DT_ALIAS(i2c_0)}, the chosen property \code{zephyr,console} is
+\code{DT_CHOSEN(zephyr_console)}, and the compatible \code{qacademy,blink-pattern} is
+\code{qacademy_blink_pattern}. Most of these macros are one token paste each: \code{DT_ALIAS(sw0)}
+is \code{DT_N_ALIAS_sw0}, which is \code{DT_N_S_buttons_S_button_0}.
+
+\textbf{A node identifier is not a value.} It cannot be stored in a variable, compared at run time,
+or chosen from a string: it is a token for the preprocessor to paste into other names. Everything in
+this section is resolved at compile time, and costs nothing at run time; the price is that a program
+cannot look up a node it did not name in its source.
+
+\subsubsection{Properties}
+With a node identifier, the property macros read the tree:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{Macro} & \thead{Result} \\
+  \midrule
+  \code{DT_PROP(node, prop)} & The value: an integer, a string literal, or for an array, a brace-enclosed initializer. \\
+  \code{DT_PROP_LEN(node, prop)} & The number of elements of an array, or of references in a phandle-array. \\
+  \code{DT_PROP_OR(node, prop, default)} & The value, or \code{default} if the node does not have the property. \\
+  \code{DT_NODE_HAS_PROP(node, prop)} & 1 if the node has the property, else 0. \\
+  \code{DT_ENUM_IDX(node, prop)} & The index of the value in the binding’s \code{enum}. \\
+  \code{DT_NODE_EXISTS(node)} & 1 if the node exists, enabled or not. \\
+  \code{DT_NODE_HAS_STATUS_OKAY(node)} & 1 if the node exists and is enabled. \\
+\end{booktable}
+
+Property names are written with underscores too: \code{delays-ms} is \code{DT_PROP(node,
+delays_ms)}. And since an array property is an initializer, it can initialize an array:
+
+\begin{ccode}
+static const int blink_ms[] = DT_PROP(DT_PATH(zephyr_user), blink_ms);
+\end{ccode}
+
+A property that does not exist is a compile error naming the macro that is missing, which after this
+section is readable. With \code{blinks} missing from \code{zephyr,user}:
+
+\begin{console}
+error: 'DT_N_S_zephyr_user_P_blinks' undeclared (first use in this function); did you mean 'DT_N_S_zephyr_user_P_blink_ms'?
+\end{console}
+
+A missing alias fails the same way, one level earlier: \code{DT_ALIAS(led1)} expands to
+\code{DT_N_ALIAS_led1}, which nothing defines, and every macro built on it fails with it in its
+name, such as \code{‘DT_N_ALIAS_led1_P_gpios_IDX_0_VAL_pin’ undeclared}.
+
+\subsubsection{Every node of a kind}
+\code{DT_FOREACH_STATUS_OKAY(compat, fn)} expands \code{fn(node_id)} once for every enabled node
+with a compatible. The \file{lectures/L02/examples/bindings/src/main.c} example uses it to build a
+table at compile time, so that adding a node to the overlay adds a table entry, with no change to
+the C:
+
+\begin{ccode}
+#define PATTERN_ENTRY(node_id)                              \
+    {                                                       \
+        .name = DT_PROP(node_id, pattern_name),             \
+        .led = GPIO_DT_SPEC_GET(node_id, led_gpios),        \
+        .steps = DT_PROP_LEN(node_id, delays_ms),           \
+        .repeat = DT_PROP(node_id, repeat),                 \
+    },
+static const struct pattern patterns[] = {
+    DT_FOREACH_STATUS_OKAY(qacademy_blink_pattern, PATTERN_ENTRY)};
+\end{ccode}
+
+The macro is itself only a name in the generated header, holding the list:
+
+\begin{ccode}
+#define DT_FOREACH_OKAY_qacademy_blink_pattern(fn) fn(DT_N_S_pattern_sos) fn(DT_N_S_pattern_heartbeat)
+\end{ccode}
+
+\code{fn} adds its own separators, here the trailing comma. Disabled nodes are left out, but they
+still exist: \code{DT_NODE_EXISTS(DT_NODELABEL(strobe))} is 1.
+
+Every node with a compatible also has an \textbf{instance number}, the \code{inst} of
+\code{DT_INST()}. Zephyr’s own documentation of \code{DT_INST()} says what they are and, more
+importantly, what they are not: enabled nodes are numbered from 0, disabled nodes after them, and
+\emph{``there is no general guarantee that the same node will have the same instance number between
+builds''}. The order in which \code{DT_FOREACH_STATUS_OKAY()} visits the nodes is not guaranteed
+either. A table built with it is in the same order as the loop that reads it, which is all a program
+should rely on.
+
+\subsubsection{Checking the tree at compile time}
+Because all of this is compile-time constants, the build can check the devicetree against what the
+code assumes, with \code{BUILD_ASSERT()}:
+
+\begin{ccode}
+BUILD_ASSERT(DT_PROP(DT_NODELABEL(heartbeat), repeat) == 2, "heartbeat should play twice");
+\end{ccode}
+
+\subsection{Devices}
+
+\subsubsection{A device per node}
+A \textbf{device} is Zephyr’s run-time object for a piece of hardware with a driver: a \code{struct
+device}, with a name, an API, configuration, state, and an init function the kernel runs at boot.
+Drivers define one for every enabled node of their compatible (Chapter~\ref{c5:ch} writes one), and
+C gets a pointer to it from the node:
+
+\begin{ccode}
+const struct device *gpio = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+\end{ccode}
+
+\code{DEVICE_DT_GET()} is a compile-time address, not a search. The device’s name,
+\code{gpio->name}, is the node’s \code{label} property if it has one, and otherwise its name:
+\code{gpio_emul}.
+
+\textbf{A device can exist and still not be usable}, because its init function ran and failed: a
+chip did not answer, a clock did not start. \code{device_is_ready()} returns true only for a device
+that initialized successfully, and code that uses a device checks it first. The GPIO API has a
+shorthand
+for a pin, \code{gpio_is_ready_dt(&spec)}.
+
+\subsubsection{Ordinals, and the two errors}
+Nodes are numbered in \textbf{dependency order}: a node comes after every node it refers to, so that
+a device is always initialized after the devices it depends on. The list is at the top of the
+generated header:
+
+\begin{console}
+ * Node dependency ordering (ordinal and path):
+ *   0   /
+ ...
+ *   22  /gpio_emul
+ *   23  /buttons
+ *   24  /buttons/button_0
+\end{console}
+
+and each node lists what it depends on:
+
+\begin{ccode}
+#define DT_N_S_buttons_S_button_0_REQUIRES_ORDS \
+	22, /* /gpio_emul */ \
+	23, /* /buttons */
+\end{ccode}
+
+The device object for a node is named after its ordinal: \code{DEVICE_DT_GET()} of \code{/gpio_emul}
+in this
+build is \code{&__device_dts_ord_22}. \textbf{Ordinals belong to one build.} \code{/gpio_emul} is 22 in the
+\code{button} example’s build, 32 in \code{blinky}’s, and something else again once an overlay adds
+a node. An ordinal in an error message means nothing until it is looked up in \emph{that} build’s
+header.
+
+That name is what appears in the two errors a missing device causes, and the difference between them
+says where to look. The \file{lectures/L02/examples/blinky} example’s live demo produces both:
+
+\begin{console}
+error: '__device_dts_ord_32' undeclared here (not in a function); did you mean '__device_dts_ord_38'?
+\end{console}
+
+\noindent \textbf{Undeclared} is a compile error. A device object is declared only for an enabled
+node, so the node exists but is disabled, or is not what the code thinks it is. Look at the
+devicetree. (The \emph{did you mean} is noise: 38 is only the nearest number that does exist.) CMake
+has usually warned already, in a line easy to scroll past: \code{No SOURCES given to Zephyr library:
+drivers__gpio}.
+
+\begin{console}
+undefined reference to `__device_dts_ord_32'
+\end{console}
+
+\textbf{Undefined reference} is a link error. The node is enabled, so the object was declared, but
+no driver defined it: the driver was not built. Look at Kconfig, here \code{CONFIG_GPIO=n}.
+
+\subsection{GPIO}
+
+\subsubsection{A pin, from the devicetree}
+A GPIO pin is a controller device, a pin number and flags, and \code{struct gpio_dt_spec} holds
+exactly that:
+
+\begin{ccode}
+struct gpio_dt_spec {
+	const struct device *port;
+	gpio_pin_t pin;
+	gpio_dt_flags_t dt_flags;
+};
+\end{ccode}
+
+\noindent \code{GPIO_DT_SPEC_GET(node, prop)} fills one from a phandle-array property, entirely at
+compile time:
+
+\begin{ccode}
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+\end{ccode}
+
+\noindent For the board’s \code{led0}, that is \code{gpio_emul}’s device, pin 0, and flags 0. For a
+property with another name, the name goes in: \code{GPIO_DT_SPEC_GET(node_id, led_gpios)}.
+
+\subsubsection{Logical and physical}
+The GPIO functions ending in \code{_dt} take a \code{gpio_dt_spec}, and work in \textbf{logical}
+levels: 1 means \emph{active}, whatever that is on the pin. The flags from the devicetree decide
+what \emph{active} is. For an LED declared \code{GPIO_ACTIVE_LOW}, on \code{native_sim}:
+
+\begin{booktable}{@{}Lll@{}}
+  \thead{Call} & \thead{Logical} & \thead{Pin} \\
+  \midrule
+  \code{gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE)} & 0 & high \\
+  \code{gpio_pin_set_dt(&led, 1)} & 1 & low \\
+  \code{gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE)} & 1 & low \\
+\end{booktable}
+
+That is how the C code stays the same when a board wires its LED the other way round: \emph{on} is
+always 1, and only the devicetree knows whether 1 is high. Functions with \code{_raw} in their name,
+such as \code{gpio_pin_set_raw()}, bypass the flags and set the pin itself; use them only when the
+level on the wire is what matters.
+
+The flags given to \code{gpio_pin_configure_dt()} are combined with the flags from the devicetree,
+so \code{GPIO_INPUT} on a button declared \code{GPIO_PULL_UP | GPIO_ACTIVE_LOW} configures an input
+with its pull-up enabled.
+
+\subsubsection{Interrupts and callbacks}
+A button is read by interrupt rather than by polling. Three calls set it up, as in the
+\file{lectures/L02/examples/button/src/main.c} example:
+
+\begin{ccode}
+gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+gpio_init_callback(&button_cb, button_pressed, BIT(button.pin));
+gpio_add_callback_dt(&button, &button_cb);
+\end{ccode}
+
+\noindent \code{GPIO_INT_EDGE_TO_ACTIVE} is logical too: an interrupt when the button becomes
+pressed, which is a falling edge for an active-low button and a rising one for an active-high
+button. \code{gpio_init_callback()} sets up a \code{struct gpio_callback} with the function to call
+and the pins it is for, and \code{gpio_add_callback_dt()} adds it to the controller’s list. The
+function receives the controller, the callback, and a mask of the pins that fired:
+
+\begin{ccode}
+static void button_pressed(const struct device *port, struct gpio_callback *cb,
+			   gpio_port_pins_t pins)
+\end{ccode}
+
+\noindent \textbf{On a microcontroller, the callback runs in the GPIO controller’s interrupt service
+routine.} It must not sleep, block or take long; Chapter~\ref{c3:ch} covers what it may do instead.
+
+\subsubsection{The emulated controller}
+\code{native_sim} has no pins, so \code{gpio_emul} keeps them in memory, and has an API of its own,
+in \code{<zephyr/drivers/gpio/gpio_emul.h>}, for a program or test to play the world outside the
+chip:
+
+\begin{ccode}
+int gpio_emul_input_set(const struct device *port, gpio_pin_t pin, int value);
+int gpio_emul_output_get(const struct device *port, gpio_pin_t pin);
+\end{ccode}
+
+\noindent Both take and return \textbf{physical} levels, not logical ones. To press an active-low
+button, a program drives its pin \emph{low}; to find out whether an active-low LED is on, it checks
+for a \emph{low} output. Both have \code{_dt} variants taking a \code{gpio_dt_spec}, which are still
+physical. These functions exist only on the emulator, and are the lines of the examples that would
+not build for a real board.
+
+Two of the emulator’s behaviours match hardware, and one does not:
+
+\begin{itemize}
+  \item \textbf{An interrupt needs an edge.} Setting an input to the level it already has fires nothing, and
+    an input configured for \code{GPIO_INT_EDGE_TO_ACTIVE} fires nothing when it becomes inactive.
+  \item \textbf{Pull resistors set the level.} Configuring an input with \code{GPIO_PULL_UP} sets its level
+    high, and \code{GPIO_PULL_DOWN} low, as a real resistor would on an open pin.
+  \item \textbf{The callback runs in the context that changed the pin.} \code{gpio_emul_input_set()} calls
+    the callbacks itself, before it returns. Called from a thread, the callback runs in that thread, and
+    \code{k_is_in_isr()} in it is false; called from a timer’s expiry function, which runs in interrupt
+    context, it runs in interrupt context. On a microcontroller it would always be an interrupt. Write
+    callbacks as if they were: the emulator will not catch one that sleeps.
+\end{itemize}
+
+\subsection{Summary}
+\begin{itemize}
+  \item Devicetree describes the hardware, and C code refers to it by role. Zephyr turns the tree into C
+    macros at build time, so there is nothing to parse at run time and nothing to change without a
+    rebuild.
+  \item A node has a path, labels, and possibly aliases pointing at it. \code{/aliases} gives applications
+    portable names; \code{/chosen} tells Zephyr which nodes to use.
+  \item Overlays add, change and delete nodes. A build uses one set of overlays, \code{DTC_OVERLAY_FILE}, a
+    board overlay, or \code{app.overlay}, and merges \code{EXTRA_DTC_OVERLAY_FILE} on top.
+    \code{build/zephyr/zephyr.dts} shows the result, and where each line came from.
+  \item Bindings give nodes their meaning: property types, required properties, defaults and enums. Only
+    declared properties reach C, except in \code{/zephyr,user}. A binding’s errors come early and name
+    the line.
+  \item A \code{compatible} chooses a node’s binding, and through \code{DT_HAS_<COMPAT>_ENABLED}, its
+    driver.
+  \item \code{DT_ALIAS()}, \code{DT_NODELABEL()} and friends give node identifiers, which are compile-time
+    tokens. \code{DT_PROP()} and friends read properties, and \code{DT_FOREACH_STATUS_OKAY()} builds
+    tables. Do not rely on instance numbers or on the order of the loop.
+  \item \code{DEVICE_DT_GET()} gives a device, and \code{device_is_ready()} says whether it can be used.
+    \code{__device_dts_ord_N} \emph{undeclared} means a disabled node; \emph{undefined reference} means
+    a driver that was not built. Look N up in that build’s \code{devicetree_generated.h}.
+  \item GPIO through \code{gpio_dt_spec} is logical: 1 is active, and the devicetree says what active is.
+    \code{gpio_emul}’s own functions are physical, and its callbacks run in the context that changed the
+    pin.
+\end{itemize}

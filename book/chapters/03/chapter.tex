@@ -1,0 +1,38 @@
+% Chapter 3, typeset from lectures/L03: the README is the opener and the closing
+% review, and each appendix is a section, in the same order and with the same subsections.
+
+\chapter{Kernel I: Threads, Time and Work Queues}
+\label{c3:ch:threads}\label{c3:ch}
+
+{\large\itshape Threads, time, and what a simulator will not pretend.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item Threads in Zephyr: \code{K_THREAD_DEFINE()}, \code{k_thread_create()}, stacks, names and states.
+  \item Priorities: cooperative (negative) and preemptible (non-negative) threads, and the \code{main}
+    thread.
+  \item When the scheduler runs: blocking, \code{k_yield()}, and a higher-priority thread becoming ready.
+  \item Time: ticks, timeouts, \code{k_sleep()}, \code{k_uptime_get()}, and why a sleep ends on a tick.
+  \item Kernel timers, and expiry functions that run in interrupt context.
+  \item Work queues: the system work queue, delayable work, and work queues of your own.
+  \item Choosing between an ISR, a work item and a thread.
+  \item \code{native_sim}’s time model: why a busy loop stops the world, and what that says about real
+    hardware.
+  \item Stack sizing without a stack analyzer: \code{CONFIG_STACK_USAGE} and \code{-fstack-usage}.
+\end{itemize}
+\end{chapterbox}
+
+Here the kernel starts. If you have used an RTOS before, most of this chapter is a translation
+exercise: threads, priorities, sleeping and timers, in Zephyr's spelling. What is worth slowing down
+for is the part that is not a translation, namely when exactly the scheduler runs, which context a
+timer's expiry function is in, and why so much Zephyr code answers an interrupt by submitting a work
+item instead of doing the work.
+
+The chapter ends where \code{native_sim} stops behaving like a microcontroller. Its time is
+simulated, so a thread that never waits stops the clock for everything, and the stack checks a board
+would give you are not there. Both are worth knowing exactly, and both are on purpose in
+\file{lectures/L03/examples/busy_loop} and \file{lectures/L03/examples/stack_usage}.
+
+\input{chapters/03/threads}
+\input{chapters/03/summary}
+\input{chapters/03/exercises}

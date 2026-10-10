@@ -1,0 +1,35 @@
+% Chapter 4, typeset from lectures/L04: the README is the opener and the closing
+% review, and each appendix is a section, in the same order and with the same subsections.
+
+\chapter{Kernel II: Communication and Application Architecture}
+\label{c4:ch:ipc}\label{c4:ch}
+
+{\large\itshape How the parts of an application talk to each other.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item Kernel objects for synchronization: semaphores, mutexes and events.
+  \item Priority inversion: how it happens, and how a mutex’s priority inheritance bounds it.
+  \item Kernel objects for passing data: message queues, FIFOs, and \code{k_poll()} for waiting on several.
+  \item Blocking, timeouts and \code{K_NO_WAIT}: what a thread should do when a queue is full.
+  \item Memory without \code{malloc()}: static allocation, \code{k_heap} and memory slabs.
+  \item zbus: channels, validators, listeners, subscribers and message subscribers.
+  \item The State Machine Framework: states, transitions, entry, run and exit actions, and parent states.
+  \item Structuring an application so that its parts know about channels and events, not about each other.
+\end{itemize}
+\end{chapterbox}
+
+A system of threads is only as good as what passes between them. This chapter is the catalogue:
+semaphores, mutexes, events, message queues and polling, what each one guarantees, and the trouble
+each one causes when it is used for the wrong job. Priority inversion gets a section of its own,
+because it is the one bug in this chapter that a correct-looking program can have for years.
+
+The second half is architecture rather than primitives: zbus, which lets the parts of an application
+publish to a channel instead of knowing about each other, and the State Machine Framework, which is
+the difference between a device's behaviour written down and the same behaviour spread across four
+threads. The examples are in \file{lectures/L04/examples}.
+
+\input{chapters/04/objects}
+\input{chapters/04/architecture}
+\input{chapters/04/summary}
+\input{chapters/04/exercises}

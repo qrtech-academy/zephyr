@@ -1,0 +1,483 @@
+% Section 6.4, from lectures/L06/appendix/c_exercises.md.
+
+\section{Exercises}
+\label{c6:sec:exercises}\label{c6:app:c}
+These exercises reinforce the concepts from \secref{c6:app:a} and \secref{c6:app:b}.
+
+\begin{aside}
+\textbf{How to check your work.} Write each exercise set as its own application under
+\file{lectures/L06/exercises}, with the file names given there, and run \code{make test} from the
+repository root. A set’s tests switch on as soon as its files exist, and a set you have not started
+is reported as \code{SKIP}. Each application grows through its set, and the tests check where it
+ends up. Shell commands are fed to your program on its standard input, and its output is checked for
+the lines each exercise shows, in order; the prompt, the echoed commands and anything else in
+between do not matter.
+
+The solutions are published in the companion repository, under
+\file{lectures/L06/appendix/solutions}, a few days after the lecture. Try each exercise yourself
+before you read them.
+\end{aside}
+
+Remember \code{source env.sh} in every new terminal. Build and run an exercise from the repository
+root:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L06/exercises/exercise1
+west build -t run
+\end{shell}
+
+% ---------------------------------------------------------------------
+\exerciseset{Shell commands of your own}
+\label{c6:set:1}
+Create an application named \code{exercise1} to work in for this exercise set.
+
+\exercise{The setpoint}{Code}
+\label{c6:ex:1.1}
+In this exercise you will give a thermostat a shell command that reads and changes its setpoint.
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{prj.conf}, enable the shell, and put the shell’s UART on the terminal the program is
+    started from.
+  \item In \code{src/main.c}, keep the setpoint in a \code{static int setpoint_c}, initially 21.
+  \item Create a root command \code{setpoint} with the help text \code{The thermostat's setpoint.}, no
+    handler of its own, and two subcommands:
+\begin{itemize}
+  \item \code{get}, which takes no arguments, and prints \code{Setpoint: <t> C}.
+  \item \code{set <celsius>}, which takes exactly one argument, sets the setpoint, and prints \code{Setpoint
+    set to <t> C}.
+\end{itemize}
+  \item Let the shell check the argument counts: declare them with \code{SHELL_CMD_ARG()}.
+  \item \code{main()} prints \code{Thermostat ready} and returns.
+\end{itemize}
+
+Pipe a session into the program:
+
+\begin{shell}
+printf 'setpoint get\nsetpoint set 25\nsetpoint get\n' \
+    | ./build/zephyr/zephyr.exe -stop_at=1
+\end{shell}
+
+\noindent The output must contain, in this order:
+
+\begin{console}
+Thermostat ready
+Setpoint: 21 C
+Setpoint set to 25 C
+Setpoint: 25 C
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item The program’s output also contains \code{uart:~$ setpoint get}. Where does that line come from?
+  \item Run \code{setpoint} alone, and then \code{retval}. What does \code{retval} print, and why that
+    value?
+  \item \code{main()} returns at once. Why does the shell keep answering commands?
+\end{itemize}
+
+\exercise{Wrong input}{Code}
+\label{c6:ex:1.2}
+
+\task{Tasks}
+Make \code{setpoint set} reject what is not a valid setpoint:
+
+\begin{itemize}
+  \item A word that is not a whole decimal number, such as \code{warm} or \code{25x}, prints the error
+    \code{not a temperature: '<word>'} with \code{shell_error()} and returns \code{-EINVAL}.
+  \item A number outside 5 to 30 prints the error \code{setpoint must be between 5 and 30 C, not <t>} and
+    returns \code{-ERANGE}. The setpoint does not change.
+\end{itemize}
+
+For the session
+
+\begin{console}
+setpoint get
+setpoint set 25
+setpoint get
+setpoint set 31
+retval
+setpoint set warm
+retval
+setpoint set 25x
+setpoint set
+\end{console}
+
+the output must contain, in this order:
+
+\begin{console}
+Setpoint: 21 C
+Setpoint set to 25 C
+Setpoint: 25 C
+setpoint must be between 5 and 30 C, not 31
+-34
+not a temperature: 'warm'
+-22
+not a temperature: '25x'
+set: wrong parameter count
+\end{console}
+
+\noindent \textbf{Hint:} \code{strtol()} from \code{<stdlib.h>} sets its \code{end} argument to the
+first character it did not convert.
+
+\task{Reflection}
+\begin{itemize}
+  \item Why is \code{atoi()} not good enough here?
+  \item Which part of the output does the shell print by itself, without your handler being called?
+  \item \code{setpoint set 99999999999999999999} is a number too. What does your handler do with it, and
+    why?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{A setpoint that survives a restart}
+\label{c6:set:2}
+Copy \code{exercise1} to a new application named \code{exercise2} to work in for this exercise set.
+
+\exercise{Storing it}{Code}
+\label{c6:ex:2.1}
+In this exercise you will store the setpoint with the settings subsystem, on the simulated flash.
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{prj.conf}, enable the settings subsystem with the ZMS backend, and what ZMS needs: flash
+    and the flash map.
+  \item Keep the setpoint in an \code{int32_t}, stored under the name \code{thermostat/setpoint}.
+  \item Register a settings handler for the subtree \code{thermostat} with
+    \code{SETTINGS_STATIC_HANDLER_DEFINE()}. Its \code{h_set} callback takes the stored \code{setpoint},
+    and rejects a stored value whose length is not that of an \code{int32_t} with \code{-EINVAL}.
+  \item In \code{main()}, initialize the settings subsystem, load the settings, and print \code{Loaded
+    setpoint: <t> C} instead of \code{Thermostat ready}.
+  \item \code{setpoint set} stores the new value with \code{settings_save_one()} before it changes the
+    setpoint in RAM. If storing fails, it prints \code{cannot store the setpoint: <error>} with
+    \code{shell_error()} and returns the error.
+\end{itemize}
+
+Run the program twice, from the same directory:
+
+\begin{shell}
+cd build
+printf 'setpoint set 25\n' | ./zephyr/zephyr.exe -stop_at=1
+printf 'setpoint get\n' | ./zephyr/zephyr.exe -stop_at=1
+\end{shell}
+
+\noindent The first run must print \code{Loaded setpoint: 21 C} and \code{Setpoint set to 25 C}, and
+the second \code{Loaded setpoint: 25 C} and \code{Setpoint: 25 C}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Where is the setpoint stored? Find the file, and find the setting’s name in it with \code{strings}.
+  \item Run the second command again from the repository root instead of from \code{build/}. What does it
+    load, and why?
+  \item Run it with \code{-flash_in_ram}. What does it load, and has the file changed?
+  \item In \code{h_set}, why read the value into a local variable and check it, rather than straight into
+    the setpoint?
+\end{itemize}
+
+\exercise{Forgetting it}{Code}
+\label{c6:ex:2.2}
+
+\task{Tasks}
+Add a subcommand \code{setpoint reset}, which takes no arguments, deletes the stored setpoint with
+\code{settings_delete()}, sets the setpoint back to 21, and prints \code{Setpoint reset to 21 C}.
+
+In five runs from the same directory, where each run is given the commands shown, the output must
+contain:
+
+\begin{booktable}{@{}lLL@{}}
+  \thead{Run} & \thead{Commands} & \thead{Output} \\
+  \midrule
+  1 & \code{setpoint set 25} & \code{Loaded setpoint: 21 C}, then \code{Setpoint set to 25 C} \\
+  2 & \code{setpoint get} & \code{Loaded setpoint: 25 C}, then \code{Setpoint: 25 C} \\
+  3 & none, run with \code{-flash_in_ram} & \code{Loaded setpoint: 21 C} \\
+  4 & \code{setpoint reset} & \code{Loaded setpoint: 25 C}, then \code{Setpoint reset to 21 C} \\
+  5 & none & \code{Loaded setpoint: 21 C} \\
+\end{booktable}
+
+\task{Reflection}
+\begin{itemize}
+  \item Enable \code{CONFIG_SETTINGS_SHELL} on the command line, and run \code{settings list} and
+    \code{settings read thermostat/setpoint} after setting the setpoint to 27. What do the four bytes it
+    prints mean?
+  \item How would you make every run of the tests start from a factory-new device, without deleting files by
+    hand?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Fatal errors}
+\label{c6:set:3}
+Create an application named \code{exercise3} to work in for this exercise set.
+
+\exercise{An impossible reading}{Code}
+\label{c6:ex:3.1}
+In this exercise you will make a thread give up with \code{k_oops()}, and see what that costs
+without a handler of your own.
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{prj.conf}, enable logging and thread names.
+  \item In \code{src/main.c}, register the log module \code{app}, and define the readings:
+\begin{ccode}
+static const int readings[] = {21, 22, -300, 23};
+\end{ccode}
+  \item Write a thread function \code{sampler()} that goes through the readings. A reading below -273 logs
+    the error \code{Impossible reading: <t> C} and calls \code{k_oops()}; any other logs \code{Sample
+    <t> C}.
+  \item In \code{main()}, create the thread with \code{k_thread_create()}, with a 1024-byte stack from
+    \code{K_THREAD_STACK_DEFINE()} and priority 5, name it \code{sampler}, and wait for it with
+    \code{k_thread_join()}. Then log \code{main() carries on}, and return.
+\end{itemize}
+
+Build, run, and check the exit status:
+
+\begin{shell}
+./build/zephyr/zephyr.exe -stop_at=1; echo "exit status $?"
+\end{shell}
+
+\task{Reflection}
+\begin{itemize}
+  \item Which lines does the kernel print, and what does each one tell you?
+  \item Does \code{main() carries on} appear? What is the exit status, and why?
+  \item Build once more with \code{CONFIG_LOG=n} on the command line. What does a fatal error print now?
+\end{itemize}
+
+\exercise{A handler of your own}{Code}
+\label{c6:ex:3.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item Create \code{src/fatal.c}, with a log module named \code{fatal}, and define
+    \code{k_sys_fatal_error_handler()} in it. It shall:
+\begin{itemize}
+  \item Switch logging to synchronous with \code{LOG_PANIC()}.
+  \item Log the error \code{Fatal error <reason> in thread '<name>'}.
+  \item For an oops, log \code{Aborting the thread} and return.
+  \item For anything else, log \code{Halting the system} and call \code{k_fatal_halt()}.
+\end{itemize}
+  \item Add \code{src/fatal.c} to the application in \code{CMakeLists.txt}.
+\end{itemize}
+
+The output must now contain, in this order, and the exit status must be 0:
+
+\begin{console}
+<inf> app: Sample 21 C
+<inf> app: Sample 22 C
+<err> app: Impossible reading: -300 C
+>>> ZEPHYR FATAL ERROR 3: Kernel oops
+<err> fatal: Fatal error 3 in thread 'sampler'
+<err> fatal: Aborting the thread
+<inf> app: main() carries on
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Why does \code{Sample 23 C} never appear?
+  \item Why does \code{k_thread_join()} return, when the thread never returned from its function?
+  \item Remove the check for the oops, so that the handler always returns. Nothing changes in this program’s
+    output. Why not, and why is it still wrong?
+\end{itemize}
+
+\exercise{An assertion}{Code}
+\label{c6:ex:3.3}
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{src/main.c}, add a function:
+\begin{ccode}
+static void set_heater_duty(int percent)
+{
+  __ASSERT((percent >= 0) && (percent <= 100), "duty cycle %d %% is out of range", percent);
+  LOG_INF("Heater duty cycle %d %%", percent);
+}
+\end{ccode}
+  \item At the end of \code{main()}, after \code{main() carries on}, call \code{set_heater_duty(150)}.
+\end{itemize}
+
+Built as usual, the program must also print \code{<inf> app: Heater duty cycle 150 \%} at the end,
+and exit with status 0. Built with \code{-DCONFIG_ASSERT=y}, the output must contain, in this order,
+and the exit status must be 1:
+
+\begin{console}
+<inf> app: main() carries on
+duty cycle 150 % is out of range
+>>> ZEPHYR FATAL ERROR 4: Kernel panic
+<err> fatal: Fatal error 4 in thread 'main'
+<err> fatal: Halting the system
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Why does the same program pass a duty cycle of 150 \% in one build and halt in the other?
+  \item With the handler from the last reflection of Exercise~\ref{c6:ex:3.2}, the one that always returns,
+    build with \code{-DCONFIG_ASSERT=y} and run. What happens, and what is the exit status?
+  \item Why would \code{__ASSERT(settings_save_one(...) == 0, "...")} be a bug?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Sanitizers}
+\label{c6:set:4}
+Create an application named \code{exercise4} to work in for this exercise set.
+
+\exercise{A battery monitor}{Code}
+\label{c6:ex:4.1}
+In this exercise you will find two bugs with the sanitizers, and fix them.
+
+\task{Tasks}
+Create \code{CMakeLists.txt}, a \code{prj.conf} with only a comment, and a \code{src/main.c} holding
+exactly this:
+
+\begin{ccode}
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Exercise Set 4: a battery monitor, with two bugs.
+ */
+
+#include <zephyr/kernel.h>
+
+/* How many of the most recent readings the average is taken over. */
+#define WINDOW 4
+
+/* The average of the first n readings in a window. */
+static __noinline int32_t average(const int32_t *window, size_t n)
+{
+	int32_t sum = 0;
+
+	for (size_t i = 0; i <= n; i++) {
+		sum += window[i];
+	}
+	return sum / (int32_t)n;
+}
+
+/* The power drawn at a voltage and a current, in microwatts. */
+static __noinline int32_t power_uw(int32_t millivolts, int32_t milliamps)
+{
+	return millivolts * milliamps * 1000;
+}
+
+static const int32_t readings_mv[] = {3300, 3310, 3290, 3300, 5000, 5020};
+static const int32_t load_ma = 450;
+
+int main(void)
+{
+	int32_t window[WINDOW] = {0};
+
+	for (size_t i = 0; i < ARRAY_SIZE(readings_mv); i++) {
+		window[i % WINDOW] = readings_mv[i];
+
+		printk("%d mV, average %d mV, %d uW\n", readings_mv[i],
+		       average(window, MIN(i + 1, WINDOW)), power_uw(readings_mv[i], load_ma));
+	}
+	return 0;
+}
+\end{ccode}
+
+\noindent Build and run it as it is.
+
+\task{Reflection}
+\begin{itemize}
+  \item Which lines of the output are wrong? Would you have noticed if you did not know what to expect?
+  \item The first three lines are right, although the bug in \code{average()} is there from the first call.
+    Why do they come out right?
+\end{itemize}
+
+\exercise{AddressSanitizer}{Code}
+\label{c6:ex:4.2}
+
+\task{Tasks}
+Build with \code{-DCONFIG_ASAN=y}, run, and fix the bug that AddressSanitizer reports, changing as
+little as possible.
+
+\task{Reflection}
+\begin{itemize}
+  \item Which line, which variable, and which kind of access does the report name?
+  \item What is the exit status, and why do the lines after the report never appear?
+\end{itemize}
+
+\exercise{UndefinedBehaviorSanitizer}{Code}
+\label{c6:ex:4.3}
+
+\task{Tasks}
+Build with \code{-DCONFIG_UBSAN=y}, run, and fix the bug that UndefinedBehaviorSanitizer reports, so
+that \code{power_uw()} returns an \code{int64_t} and computes the power without overflow for any
+voltage and current that fit in an \code{int32_t} each.
+
+Built with \code{-DCONFIG_ASAN=y -DCONFIG_UBSAN=y}, and built without either, the program must print
+exactly:
+
+\begin{console}
+3300 mV, average 3300 mV, 1485000000 uW
+3310 mV, average 3305 mV, 1489500000 uW
+3290 mV, average 3300 mV, 1480500000 uW
+3300 mV, average 3300 mV, 1485000000 uW
+5000 mV, average 3725 mV, 2250000000 uW
+5020 mV, average 4152 mV, 2259000000 uW
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item The program did not stop at the report. How is that different from AddressSanitizer?
+  \item Would \code{return (int64_t)(millivolts * milliamps * 1000);} fix the bug? Try it with UBSan.
+  \item Build the fixed program with \code{-DCONFIG_COVERAGE=y}, run it, and run \code{gcov} on
+    \code{main.c} as in \secref{c6:app:b}. How many times did the body of the loop in \code{average()}
+    run, and why that number?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Sockets}
+\label{c6:set:5}
+Create an application named \code{exercise5} to work in for this exercise set.
+
+\exercise{A UDP server}{Code}
+\label{c6:ex:5.1}
+In this exercise you will write a UDP server that answers every datagram in capitals, and a client
+for it in the same program, talking through the host’s network with offloaded sockets.
+
+\task{Tasks}
+\begin{itemize}
+  \item In \code{prj.conf}, enable networking with IPv4 only, sockets, and \code{native_sim}’s offloaded
+    sockets, as in the \file{lectures/L06/examples/sockets} example. No logging is needed.
+  \item Define \code{PORT} as 4300.
+  \item Write a thread \code{server}, with \code{K_THREAD_DEFINE()}, a 2048-byte stack and priority 7,
+    which:
+\begin{itemize}
+  \item Creates a UDP socket, and binds it to \code{PORT} on every address (\code{NET_INADDR_ANY}).
+  \item In an endless loop, receives a datagram of up to 64 bytes with \code{zsock_recvfrom()}, turns it
+    into capitals with \code{toupper()}, and sends it back with \code{zsock_sendto()} to the address it
+    came from.
+\end{itemize}
+  \item Use the prefixed names throughout: \code{struct net_sockaddr_in}, \code{NET_AF_INET},
+    \code{net_htons()}, and so on.
+\end{itemize}
+
+\exercise{The client}{Code}
+\label{c6:ex:5.2}
+
+\task{Tasks}
+In \code{main()}:
+
+\begin{itemize}
+  \item Create a UDP socket, and set its receive timeout to one second with \code{ZSOCK_SO_RCVTIMEO}.
+  \item Sleep 100 ms, so that the server, which has a lower priority, has bound its port.
+  \item For each of the words \code{hello}, \code{zephyr} and \code{native_sim}, send the word to
+    \code{127.0.0.1} at \code{PORT}, receive the reply, and print \code{Sent '<word>', received
+    '<reply>'}. If no reply arrives, print \code{No reply to '<word>': <errno>} instead.
+  \item Close the socket and print \code{Done}.
+\end{itemize}
+
+The output must contain, in this order:
+
+\begin{console}
+Sent 'hello', received 'HELLO'
+Sent 'zephyr', received 'ZEPHYR'
+Sent 'native_sim', received 'NATIVE_SIM'
+Done
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Run the program without \code{-no-rt} and with \code{-stop_at=10}, and send it a datagram from
+    another terminal with \code{printf 'from the host' | nc -u -w1 127.0.0.1 4300}. What comes back, and
+    what does that say about where the port is?
+  \item Why does the client set a receive timeout, when the example’s TCP client does not?
+  \item The output also begins with \code{WARNING: Using a test - not safe - entropy source}. Where does
+    that come from?
+\end{itemize}

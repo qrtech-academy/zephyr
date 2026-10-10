@@ -1,0 +1,38 @@
+% Chapter 2, typeset from lectures/L02: the README is the opener and the closing
+% review, and each appendix is a section, in the same order and with the same subsections.
+
+\chapter{Devicetree}
+\label{c2:ch:devicetree}\label{c2:ch}
+
+{\large\itshape The board as data, and the macros that read it.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item Why Zephyr describes hardware in data rather than in code.
+  \item Devicetree syntax: nodes, properties, unit addresses, labels, phandles, aliases and \code{chosen}.
+  \item The board’s devicetree: \code{native_sim} and its emulated peripherals.
+  \item Overlays: changing the board’s devicetree for one application, and which overlays a build uses.
+  \item \code{/zephyr,user}: values of the application’s own, without a binding.
+  \item Bindings: what a node’s properties mean, which are required, and their types.
+  \item From devicetree to C: node identifiers, \code{DT_ALIAS()}, \code{DT_NODELABEL()}, \code{DT_PROP()},
+    and \code{DT_FOREACH_STATUS_OKAY()}.
+  \item Getting a device: \code{DEVICE_DT_GET()}, \code{GPIO_DT_SPEC_GET()} and \code{device_is_ready()}.
+  \item GPIO: outputs, inputs and edge interrupts, through the emulated GPIO controller.
+  \item Reading devicetree errors: \code{__device_dts_ord_} and friends.
+\end{itemize}
+\end{chapterbox}
+
+Zephyr keeps the hardware out of the code. What exists, where it is wired and what it is called live
+in the devicetree, a description the build turns into C macros, and a driver or an application reads
+the description rather than the datasheet. This chapter takes that apart: the language, the board's
+own tree, the overlays that change it for one application, the bindings that give a node meaning,
+and the macros that get a device out of it at compile time. It ends with GPIO, the first device API
+the book uses.
+
+The examples are \file{lectures/L02/examples/blinky}, \file{lectures/L02/examples/button} and
+\file{lectures/L02/examples/bindings}, and the exercises in \secref{c2:sec:exercises} build the same
+three things yourself, against a devicetree the test suite changes underneath you.
+
+\input{chapters/02/devicetree}
+\input{chapters/02/summary}
+\input{chapters/02/exercises}

@@ -1,0 +1,48 @@
+% Section 2.2, from lectures/L02/README.md: the objectives, the evaluation
+% questions, and the next lecture.
+
+\section{Review}
+\label{c2:sec:review}
+
+\needspace{6\baselineskip}
+\subsection*{What you should be able to do now}
+After this chapter, you should:
+
+\begin{itemize}
+  \item Understand how devicetree separates \emph{what hardware there is} from \emph{the code that uses it}.
+  \item Be able to read a board’s devicetree, and the merged result of a build in \code{zephyr.dts}.
+  \item Be able to add and change nodes and properties with an overlay.
+  \item Be able to write a binding for a node of your own.
+  \item Be able to get devices and properties from the devicetree in C, entirely at compile time.
+  \item Be able to drive and read GPIO pins, and react to edges with a callback.
+  \item Be able to trace a devicetree-related build error back to the node that caused it.
+\end{itemize}
+
+\needspace{6\baselineskip}
+\subsection*{Questions to test yourself}
+You should be able to explain:
+
+\begin{enumerate}
+  \item What is the difference between a node’s name, its label, and an alias?
+  \item What does a binding add to a devicetree node, and what happens to a node whose binding is missing?
+  \item Why must a \code{compatible} string’s vendor prefix be known to the build?
+  \item How does an overlay change a board’s devicetree, and where can you see the merged result?
+  \item Why is \code{DT_PROP(node, prop)} resolved at compile time, and what does that make impossible?
+  \item What does \code{device_is_ready()} check, and why must a driver’s user call it?
+  \item What does \code{GPIO_ACTIVE_LOW} in the devicetree change in the C code that uses the pin?
+  \item What is the difference between \code{'__device_dts_ord_32' undeclared} and \code{undefined reference
+    to '__device_dts_ord_32'}, and what does the number tell you?
+\end{enumerate}
+
+\needspace{6\baselineskip}
+\subsection*{Looking ahead}
+Kernel I, threads and time:
+
+\begin{itemize}
+  \item Threads, priorities, and cooperative and preemptive scheduling.
+  \item Timers, and which context their expiry functions run in.
+  \item Work queues, and deferring work out of interrupt context.
+  \item What \code{native_sim}’s simulated time means for code that spins, and for stack sizes.
+\end{itemize}
+
+You will trace, line by line, which thread runs when, and why.

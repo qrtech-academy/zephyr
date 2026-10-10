@@ -1,0 +1,143 @@
+% Section 1.1, from lectures/L01/appendix/a_setup.md.
+
+\section{Setting Up the Workspace}
+\label{c1:sec:settinguptheworksp}\label{c1:app:a}
+Every program in this book is built and run on Linux. This section installs what the workspace
+needs, sets it up, and checks that it works. Do it before the first lecture.
+
+\subsection{Linux}
+Any recent x86-64 Linux works. On Windows, use \textbf{WSL 2} with \textbf{Ubuntu 24.04}, as in the
+other courses in this track. In \textbf{Windows PowerShell as Administrator}:
+
+\begin{shell}
+wsl --install -d Ubuntu-24.04
+\end{shell}
+
+\noindent Restart if asked, start \emph{Ubuntu} from the Start menu, and choose a user name and
+password. \code{native_sim} needs WSL \textbf{2}: the old WSL 1 cannot run the programs it builds.
+Check with \code{wsl --status} in PowerShell, which must say \code{Default Version: 2}.
+
+\textbf{Keep the repository in the Linux file system}, for example in \code{~/qacademy}, and not
+under \code{/mnt/c}. A Zephyr build touches thousands of files, and through \code{/mnt/c} it is many
+times slower.
+
+\subsection{Packages}
+In the Ubuntu terminal:
+
+\begin{shell}
+sudo apt -y update
+sudo apt -y install git make cmake gcc g++ python3 python3-venv python3-pip clang-format gdb
+\end{shell}
+
+\noindent What each one is for:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{Package} & \thead{Used for} \\
+  \midrule
+  \code{git} & Fetching the companion repository, and Zephyr through west. \\
+  \code{make} & The repository’s \code{make setup}, \code{make test} and friends. \\
+  \code{cmake} & Zephyr’s build system. Version 3.20 or newer; Ubuntu 22.04 and 24.04 both have it. \\
+  \code{gcc}, \code{g++} & The compiler. \code{native_sim} programs are Linux programs, built by the host’s own GCC. \\
+  \code{python3}, \code{python3-venv}, \code{python3-pip} & west, Twister, and the scripts that process Kconfig and devicetree. \\
+  \code{clang-format} & \code{make format}, which formats C files the way Zephyr does. \\
+  \code{gdb} & Debugging in Chapter~\ref{c6:ch}. \\
+\end{booktable}
+
+\textbf{No Zephyr SDK is needed.} The SDK holds cross-compilers for real microcontrollers;
+\code{native_sim} uses the host compiler, which \code{source env.sh} (below) tells Zephyr to do.
+
+Two packages are optional:
+
+\begin{itemize}
+  \item \code{device-tree-compiler} (\code{dtc}). Zephyr processes devicetree with its own Python scripts
+    and uses \code{dtc} only for extra warnings. Without it, every build prints \code{Could NOT find Dtc
+    (missing: DTC)}, which is harmless.
+  \item \code{gcc-multilib g++-multilib}. This book builds for \code{native_sim/native/64}, a 64-bit
+    program. The plain \code{native_sim} board is 32-bit, and building for it without these packages
+    fails with \code{fatal error: bits/libc-header-start.h: No such file or directory}.
+\end{itemize}
+
+\subsection{The workspace}
+Clone the repository and set it up:
+
+\begin{shell}
+git clone https://github.com/qrtech-academy/zephyr.git
+cd zephyr
+make setup
+\end{shell}
+
+\noindent \code{make setup} does four things, all inside the repository:
+
+\begin{enumerate}
+  \item Creates a Python environment in \code{.venv} and installs west into it.
+  \item Makes the repository a west workspace, with \file{west.yml} as its manifest.
+  \item Runs \code{west update}, which fetches the Zephyr release that \code{west.yml} pins into
+    \code{deps/zephyr}.
+  \item Installs Zephyr’s Python requirements, Twister’s among them, into \code{.venv}.
+\end{enumerate}
+
+It takes a few minutes and about 1 GB of disk. Nothing is installed outside the repository, and
+running it again is safe.
+
+Then, \textbf{in every new terminal}:
+
+\begin{shell}
+source env.sh
+\end{shell}
+
+\noindent That activates the Python environment, so that \code{west} is found, and sets two
+variables: \code{ZEPHYR_BASE}, which says where Zephyr is, and \code{ZEPHYR_TOOLCHAIN_VARIANT=host},
+which says to build with the host’s GCC. Your prompt starts with \code{(.venv)} while it is active.
+
+\subsection{Checking that it works}
+From the repository root:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L01/examples/hello
+west build -t run
+\end{shell}
+
+\noindent The first command configures and builds the example into \code{build/}, which takes about
+half a minute the first time. The second runs it:
+
+\begin{console}
+*** Booting Zephyr OS build v4.4.2 ***
+Hello from native_sim/native/64
+[00:00:00.000,000] <inf> hello: Tick 1 at 0 ms
+[00:00:00.510,000] <inf> hello: Tick 2 at 510 ms
+[00:00:01.020,000] <inf> hello: Tick 3 at 1020 ms
+[00:00:01.530,000] <wrn> hello: A warning, in yellow
+\end{console}
+
+\noindent The program keeps running after that, because a Zephyr system does not exit when
+\code{main()} returns. Stop it with \code{Ctrl+C}. Finally, check that the test suites run:
+
+\begin{shell}
+make test
+\end{shell}
+
+\noindent With no exercises written yet, every exercise set is reported as \code{SKIP}, and the
+command succeeds.
+
+\subsection{Visual Studio Code}
+With the \textbf{WSL} extension, run \code{code .} from the repository root in the Ubuntu terminal.
+For code navigation that understands Zephyr’s include paths and \code{CONFIG_} macros, install the
+\textbf{C/C++} extension and point it at the build’s compilation database, which every build writes
+to \code{build/compile_commands.json}. In \code{.vscode/settings.json}:
+
+\begin{yamlcode}
+{
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
+}
+\end{yamlcode}
+
+\subsection{When something goes wrong}
+\begin{booktable}{@{}LL@{}}
+  \thead{Message} & \thead{Cause} \\
+  \midrule
+  \code{west: command not found} & \code{source env.sh} has not been run in this terminal. \\
+  \code{ZEPHYR_TOOLCHAIN_VARIANT not set, trying to locate Zephyr SDK} followed by \code{Could not find a package configuration file provided by "Zephyr-sdk"} & Also \code{source env.sh}: without it, Zephyr looks for the SDK. \\
+  \code{error: the workspace is not set up} & \code{make setup} has not been run, or did not finish. Run it again. \\
+  \code{fatal error: bits/libc-header-start.h: No such file or directory} & Building for the 32-bit \code{native_sim} without \code{gcc-multilib}. Use \code{native_sim/native/64}. \\
+  A build that fails for no reason you can see after changing boards or options & A stale build directory. Build again with \code{-p} (pristine). \\
+\end{booktable}

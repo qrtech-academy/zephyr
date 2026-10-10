@@ -1,0 +1,362 @@
+% Section 4.2, from lectures/L04/appendix/b_zbus_and_smf.md.
+
+\section{Application Architecture: zbus and the State Machine Framework}
+\label{c4:sec:applicationarchite}\label{c4:app:b}
+\secref{c4:app:a} gave threads the means to cooperate. This section is about keeping that
+cooperation manageable as an application grows: \textbf{zbus}, which lets the parts of an
+application exchange messages without knowing about each other, and the \textbf{State Machine
+Framework}, which turns \emph{what should happen now?} into a table rather than a tangle of flags.
+By the end you should be able to explain every line the \file{lectures/L04/examples/zbus} and
+\file{lectures/L04/examples/smf} examples print.
+
+\subsection{Why decouple}
+A temperature sensor thread that calls \code{display_update()}, \code{alarm_check()} and
+\code{logger_write()} knows about three other modules, links against them, and has to change
+whenever a fourth one wants the temperature. Give it a message queue per consumer instead and it
+still knows about all of them, only through their queues. Either way, testing the sensor means
+building everything it talks to.
+
+The alternative is to make the \emph{data} the interface. The sensor publishes temperatures to a
+\textbf{channel}; whoever needs temperatures observes that channel. The sensor does not know who is
+listening, and the consumers do not know who publishes. Adding a consumer changes no existing code,
+and a test can publish fake temperatures to exercise the consumers, or observe the channel to check
+the sensor. zbus is Zephyr’s implementation of that idea.
+
+\subsection{zbus}
+zbus needs \code{CONFIG_ZBUS=y}. It has two kinds of thing: \textbf{channels}, which hold messages,
+and \textbf{observers}, which are told when a channel changes.
+
+\subsubsection{Channels}
+A channel is a statically allocated message of one type, a lock, and a list of observers:
+
+\begin{ccode}
+struct temperature_msg {
+	uint32_t seq;
+	int32_t millidegrees;
+};
+
+ZBUS_CHAN_DEFINE(temperature_chan,              /* The channel's name. */
+		 struct temperature_msg,        /* The message type. */
+		 temperature_is_valid,          /* A validator, or NULL. */
+		 NULL,                          /* User data, or NULL. */
+		 ZBUS_OBSERVERS(alarm, display), /* Who is notified, in this order. */
+		 ZBUS_MSG_INIT(0));             /* The message's initial value. */
+\end{ccode}
+
+\noindent The channel \textbf{owns} its message: there is exactly one copy of it, inside the
+channel, and it always holds the last value published. Everything else gets copies, or a look while
+the channel is locked.
+
+A \textbf{validator} is a function that checks a message before it is accepted:
+
+\begin{ccode}
+static bool temperature_is_valid(const void *msg, size_t msg_size)
+{
+	const struct temperature_msg *t = msg;
+
+	return (t->millidegrees >= -40000) && (t->millidegrees <= 125000);
+}
+\end{ccode}
+
+\noindent A message the validator rejects is never stored, no observer hears of it, and the
+publisher gets \code{-ENOMSG}. That keeps the check in one place, next to the data, rather than in
+every consumer.
+
+\subsubsection{Publishing and reading}
+\begin{ccode}
+struct temperature_msg t = {.seq = 1, .millidegrees = 21500};
+int err = zbus_chan_pub(&temperature_chan, &t, K_MSEC(100));
+\end{ccode}
+
+\noindent \code{zbus_chan_pub()} does five things, in order:
+
+\begin{enumerate}
+  \item Runs the validator, and returns \code{-ENOMSG} if it rejects the message.
+  \item Locks the channel, waiting at most the timeout, and returns \code{-EBUSY} or \code{-EAGAIN} if it
+    cannot.
+  \item Copies the message into the channel.
+  \item Notifies every observer, in the order \code{ZBUS_OBSERVERS()} lists them.
+  \item Unlocks the channel.
+\end{enumerate}
+
+If notifying an observer fails, for example because a subscriber’s queue is full,
+\code{zbus_chan_pub()} returns that error, \textbf{although the message was stored}, and the
+remaining observers are still notified. The one exception is running out of memory for a message
+subscriber’s copy, which stops the notifications there.
+
+Reading copies the message out, under the lock:
+
+\begin{ccode}
+struct temperature_msg t;
+zbus_chan_read(&temperature_chan, &t, K_MSEC(100));
+\end{ccode}
+
+\noindent \code{zbus_chan_claim()} and \code{zbus_chan_finish()} lock the channel and give access to
+the message in place, for large messages that should not be copied; hold the claim briefly, since it
+blocks every publisher and reader.
+
+\textbf{A note on error numbers.} The \file{lectures/L04/examples/zbus} example compares the return
+value with \code{-ENOMSG} rather than printing it, because the number depends on the C library.
+\code{native_sim} uses the host’s, where \code{ENOMSG} is 42; Zephyr’s own minimal C library defines
+it as 35. Always compare with the name.
+
+\subsubsection{Observers}
+There are four kinds of observer. What distinguishes them is \textbf{which thread runs their code},
+and \textbf{what they receive}:
+
+\begin{booktable}{@{}LLL@{}}
+  \thead{Observer} & \thead{Runs in} & \thead{Receives} \\
+  \midrule
+  Listener \newline \code{ZBUS_LISTENER_DEFINE(name, callback)} & The publisher's thread, inside
+    \code{zbus_chan_pub()}, with the channel locked & A call; it reads the message in place with
+    \code{zbus_chan_const_msg()} \\
+  \addlinespace
+  Subscriber \newline \code{ZBUS_SUBSCRIBER_DEFINE(name, queue_size)} & A thread of its own,
+    waiting in \code{zbus_sub_wait()} & A notification that the channel changed; it reads the
+    channel itself \\
+  \addlinespace
+  Message subscriber \newline \code{ZBUS_MSG_SUBSCRIBER_DEFINE(name)} & A thread of its own,
+    waiting in \code{zbus_sub_wait_msg()} & A copy of every message \\
+  \addlinespace
+  Asynchronous listener \newline \code{ZBUS_ASYNC_LISTENER_DEFINE(name, callback)} & A work queue
+    & A copy of the message, passed to the callback \\
+\end{booktable}
+
+\textbf{A listener is synchronous.} Its callback runs before \code{zbus_chan_pub()} returns, in the
+publisher’s thread, with the channel locked, so it is effectively part of the publisher. In the
+example, \code{alarm saw \#1 ... in thread 'sensor_thread'} is printed before \code{zbus_chan_pub()
+returned 0}. A listener must therefore be short and must never block, just like an interrupt
+handler, and it cannot publish to its own channel, whose lock its thread already holds. A listener
+is the right tool for something quick and urgent: setting an alarm output, waking a thread.
+
+\textbf{A subscriber is told, not given.} Its notification is a pointer to the channel, put into a
+message queue of \code{queue_size} entries. The subscriber’s thread reads the channel when it gets
+to run, and sees whatever the channel holds \emph{then}:
+
+\begin{ccode}
+ZBUS_SUBSCRIBER_DEFINE(display, 4);
+
+static void display_main(void)
+{
+	const struct zbus_channel *chan;
+	struct temperature_msg t;
+
+	while (zbus_sub_wait(&display, &chan, K_FOREVER) == 0) {
+		zbus_chan_read(chan, &t, K_FOREVER);
+		show(&t);
+	}
+}
+\end{ccode}
+
+\noindent \textbf{So a subscriber can miss messages.} If two messages are published before the
+subscriber’s thread runs, both notifications are waiting, and both reads return the second message.
+In the example, the display sees \#3 twice and never sees \#2. That is not a bug: for a display,
+only the latest value matters, and skipping stale ones is exactly right. When a subscriber’s queue
+is full, the publisher waits for room for as long as its timeout allows, \textbf{still holding the
+channel’s lock}, so the subscriber cannot read the channel to catch up; when the timeout expires,
+the notification is lost and \code{zbus_chan_pub()} returns the error. Size the queue for the bursts
+the subscriber must survive.
+
+\textbf{A message subscriber gets everything.} zbus copies each message into a buffer (a
+\code{net_buf}, from the heap by default) and queues the copy, and \code{zbus_sub_wait_msg()}
+returns it:
+
+\begin{ccode}
+ZBUS_MSG_SUBSCRIBER_DEFINE(logger);
+
+while (zbus_sub_wait_msg(&logger, &chan, &t, K_FOREVER) == 0) {
+	log_reading(&t);
+}
+\end{ccode}
+
+\noindent In the example, the logger sees both \#2 and \#3. The cost is a buffer per queued message,
+and it needs \code{CONFIG_ZBUS_MSG_SUBSCRIBER=y}. Use it when every message matters, as for a logger
+or a protocol.
+
+\textbf{Asynchronous listeners} need \code{CONFIG_ZBUS_ASYNC_LISTENER=y}: their callback runs later,
+from a work queue, with a copy of the message. They suit work too slow for a listener that does not
+justify a thread of its own.
+
+\subsubsection{Priorities decide the order}
+A listener’s output always appears inside the publish. Everything else happens when the scheduler
+says so. In the example, the sensor thread has the highest priority, so the subscribers only run
+once it sleeps; give the sensor a lower priority than the subscribers, and each subscriber runs as
+soon as its notification is queued, before \code{zbus_chan_pub()} has even returned, and then the
+display sees \#2 too.
+
+\code{CONFIG_ZBUS_PRIORITY_BOOST}, enabled by default, can raise a publisher’s priority while it
+holds a channel, above the highest-priority observer thread, so that observers cannot preempt a
+publish halfway. It only knows an observer’s priority once the observer’s thread has called
+\code{zbus_obs_attach_to_thread()}; the examples do not, so no boost happens there.
+
+\subsubsection{Designing with channels}
+\begin{itemize}
+  \item \textbf{One channel per kind of data}, named for the data (\code{temperature_chan}), not for its
+    producer or consumer.
+  \item \textbf{Small, flat messages.} Every publish and read copies them.
+  \item \textbf{Choose the observer by what it needs:} a listener for urgent and quick, a subscriber for
+    \emph{the latest value}, a message subscriber for \emph{every value}.
+  \item \textbf{Validate in the channel}, not in the consumers.
+\end{itemize}
+
+\subsection{The State Machine Framework}
+Most devices are state machines, whether or not their code says so. A heater is idle, heating,
+holding a temperature, or in a fault, and what an event means depends on which: \emph{temperature
+reached} matters while heating, and means nothing while idle. Written as flags and \code{if}
+statements, that knowledge is spread over every function that handles an event. Written as a state
+machine, it is in one place, and each state’s code only handles what can happen in that state.
+
+The State Machine Framework (SMF) needs \code{CONFIG_SMF=y}, and
+\code{CONFIG_SMF_ANCESTOR_SUPPORT=y} for parent states.
+
+\subsubsection{States}
+A state is a \code{struct smf_state} with up to three \textbf{actions}, functions that take the
+state machine’s object:
+
+\begin{itemize}
+  \item \textbf{entry}, run when the state is entered;
+  \item \textbf{run}, run each time the state machine runs while in the state, typically once per event;
+  \item \textbf{exit}, run when the state is left.
+\end{itemize}
+
+The whole state machine is an array of states:
+
+\begin{ccode}
+enum heater_state { OPERATIONAL, IDLE, HEATING, HOLD, FAULT };
+
+static const struct smf_state states[] = {
+    [OPERATIONAL] = SMF_CREATE_STATE(operational_entry, operational_run,
+                                     operational_exit, NULL, NULL),
+    [IDLE] = SMF_CREATE_STATE(idle_entry, idle_run, NULL,
+                              &states[OPERATIONAL], NULL),
+    [HEATING] = SMF_CREATE_STATE(heating_entry, heating_run, heating_exit,
+                                 &states[OPERATIONAL], NULL),
+    [HOLD] = SMF_CREATE_STATE(hold_entry, hold_run, NULL,
+                              &states[OPERATIONAL], NULL),
+    [FAULT] = SMF_CREATE_STATE(fault_entry, fault_run, fault_exit, NULL, NULL),
+};
+\end{ccode}
+
+\noindent \code{SMF_CREATE_STATE(entry, run, exit, parent, initial)} takes the three actions, any of
+which may be \code{NULL}, the state’s parent, and an initial child state, used only with
+\code{CONFIG_SMF_INITIAL_TRANSITION}.
+
+\subsubsection{The object and its context}
+The state machine works on an object of the application’s own, whose \textbf{first member} must be a
+\code{struct smf_ctx}, so that a pointer to the object is also a pointer to the context:
+
+\begin{ccode}
+struct heater {
+	struct smf_ctx ctx;   /* Must be first. */
+	uint32_t event;       /* What the run actions look at. */
+};
+\end{ccode}
+
+\noindent \code{SMF_CTX(&heater)} casts the object to its context for SMF’s functions, and every action receives
+the object as a \code{void *}.
+
+\subsubsection{Running it}
+Three functions do everything:
+
+\begin{itemize}
+  \item \textbf{\code{smf_set_initial(ctx, state)}} starts the state machine in a state, running the entry
+    actions of the state and its ancestors, outermost first.
+  \item \textbf{\code{smf_run_state(ctx)}} runs the current state’s run action once.
+  \item \textbf{\code{smf_set_state(ctx, state)}}, called from an action, transitions to another state: it
+    runs the exit actions of the states being left and the entry actions of the states being entered.
+\end{itemize}
+
+A typical application runs the state machine once per event, from a thread:
+
+\begin{ccode}
+while (true) {
+	k_msgq_get(&heater_events, &heater.event, K_FOREVER);
+	smf_run_state(SMF_CTX(&heater));
+}
+\end{ccode}
+
+\noindent A run action decides what the event means in its state:
+
+\begin{ccode}
+static enum smf_state_result heating_run(void *obj)
+{
+	struct heater *heater = obj;
+
+	switch (heater->event) {
+	case EVENT_TEMP_REACHED:
+		smf_set_state(SMF_CTX(heater), &states[HOLD]);
+		return SMF_EVENT_HANDLED;
+	case EVENT_STOP:
+		smf_set_state(SMF_CTX(heater), &states[IDLE]);
+		return SMF_EVENT_HANDLED;
+	default:
+		return SMF_EVENT_PROPAGATE;
+	}
+}
+\end{ccode}
+
+\noindent \code{smf_set_state()} must not be called from an exit action, where the state machine is
+already in the middle of a transition; SMF logs an error and ignores it.
+\code{smf_set_terminate(ctx, value)} stops the state machine, and makes \code{smf_run_state()}
+return the value from then on.
+
+\subsubsection{Parent states}
+With \code{CONFIG_SMF_ANCESTOR_SUPPORT=y}, states form a hierarchy, and two things change.
+
+\textbf{Events propagate upwards.} A run action returns \code{SMF_EVENT_HANDLED} or
+\code{SMF_EVENT_PROPAGATE}. If the state handled the event, or transitioned, that is the end of it.
+Otherwise the parent’s run action gets the event, then the grandparent’s, until one handles it. A
+state without a run action propagates everything. Behaviour that several states share is written
+once, in their parent: in the example, a fault in IDLE, HEATING or HOLD is handled by OPERATIONAL
+alone.
+
+\textbf{Transitions only leave and enter what changes.} A transition runs exit actions from the
+current state up to, but not including, the lowest ancestor that the old and new state have in
+common, and entry actions from below that ancestor down to the new state. Moving from HEATING to
+HOLD, both children of OPERATIONAL, runs HEATING’s exit and HOLD’s entry, and OPERATIONAL is neither
+left nor entered. Moving to FAULT, which is outside OPERATIONAL, runs OPERATIONAL’s exit as well,
+and the example’s trace shows \code{OPERATIONAL exit}. Whatever a parent sets up in its entry
+action, such as switching a motor on, therefore stays set up while the state machine moves between
+its children.
+
+Without \code{CONFIG_SMF_ANCESTOR_SUPPORT}, the parent argument is ignored, every state is on its
+own, and a run action’s return value does not matter: that is a \textbf{flat} state machine.
+
+\subsubsection{Driving it with events}
+The state machine’s thread needs events to run on, and how they arrive matters:
+
+\begin{itemize}
+  \item \textbf{A message queue} delivers every event, in order, and can carry data with it. It is the
+    default choice.
+  \item \textbf{A \code{k_event}} delivers \emph{which} events happened, as bits. It is simple and
+    ISR-friendly, but events of the same kind merge and their order is lost: the
+    \file{lectures/L04/examples/smf} example’s README shows \code{START}, \code{STOP}, \code{START},
+    \code{START} being handled as \code{START}, \code{START}, \code{STOP}. Use it only when that cannot
+    matter.
+  \item \textbf{zbus}: the state machine’s thread subscribes to the channels whose messages are its events.
+\end{itemize}
+
+\textbf{Keep the state machine itself free of threads.} If its code only reacts to the event it is
+given and records what it does, it can be tested by calling it directly with a sequence of events,
+with no threads and no timing at all. Exercise Set~\ref{c4:set:4} is built that way.
+
+\subsection{Summary}
+\begin{itemize}
+  \item zbus decouples an application’s parts: publishers and observers only know channels.
+  \item A channel owns one statically allocated message of one type, and a validator can reject messages
+    before they are stored.
+  \item \code{zbus_chan_pub()} validates, locks, copies, notifies observers in order, and unlocks.
+  \item A listener runs inside the publish, in the publisher’s thread, with the channel locked: short, and
+    never blocking.
+  \item A subscriber is notified and reads the latest value, so it can miss intermediate messages. A message
+    subscriber gets a copy of every message.
+  \item Thread priorities decide when subscribers run, relative to the publisher.
+  \item Compare error codes with their names: \code{native_sim} uses the host’s C library.
+  \item SMF describes a state machine as a table of states with entry, run and exit actions.
+  \item \code{smf_set_initial()} starts it, \code{smf_run_state()} runs it once per event, and
+    \code{smf_set_state()} transitions.
+  \item With parent states, unhandled events propagate upwards, and transitions do not leave or re-enter
+    common ancestors.
+  \item Feed a state machine from a message queue when order and count matter, and keep its logic free of
+    threads, so that it can be tested directly.
+\end{itemize}

@@ -1,0 +1,354 @@
+% Section 5.4, from lectures/L05/appendix/c_exercises.md.
+
+\section{Exercises}
+\label{c5:sec:exercises}\label{c5:app:c}
+These exercises reinforce the concepts from \secref{c5:app:a} and \secref{c5:app:b}.
+
+\begin{aside}
+\textbf{How to check your work.} Write each exercise set in its own directory under
+\file{lectures/L05/exercises}, with the file names given there, and run \code{make test} from the
+repository root. A set’s tests switch on as soon as its files exist, and a set you have not started
+is reported as \code{SKIP}. Sets 1 to 3 are one driver growing: start each by copying the previous
+set’s directory. The tests of Sets 1 to 3 are ztest applications in
+\file{lectures/L05/exercises/test} that build your module against the course’s emulator; Set 4 is
+checked by its output, and Set 5 by running your own tests.
+
+The solutions are published in the companion repository, under
+\file{lectures/L05/appendix/solutions}, a few days after the lecture. Try each exercise yourself
+before you read them.
+\end{aside}
+
+Remember \code{source env.sh} in every new terminal.
+
+\subsection{The part: Lumo}
+Lumo is a made-up I2C ambient light sensor. It measures continuously: its DATA registers always hold
+the latest measurement, and there is nothing to start. Its datasheet, in full:
+
+\begin{booktable}{@{}lllL@{}}
+  \thead{Register} & \thead{Name} & \thead{Access} & \thead{Contents} \\
+  \midrule
+  \code{0x00} & \code{CONFIG} & R/W & Bits 1:0, \code{GAIN}: \code{0} is a gain of 1, \code{1} of 2, \code{2} of 4, \code{3} of 8. Bits 7:2 are reserved, read as 0 and ignore writes. Reset value \code{0x00}. \\
+  \code{0x01} & \code{DATA_LSB} & R & The measurement, low byte. \\
+  \code{0x02} & \code{DATA_MSB} & R & The measurement, high byte. \\
+  \code{0x0A} & \code{PART_ID} & R & Always \code{0x4C} on a genuine part. \\
+\end{booktable}
+
+\begin{itemize}
+  \item The measurement is an \textbf{unsigned 16-bit count, little-endian}: \code{DATA_LSB} then
+    \code{DATA_MSB}.
+  \item At a gain of 1, \textbf{one count is 0.25 lux}. At a gain of G, one count is 0.25 / G lux.
+  \item A count of \code{0xFFFF} means the part is \textbf{saturated}: the light is at least that bright.
+  \item A read of several bytes continues at the following registers, so both DATA bytes can be read in one
+    transfer. Writes to read-only registers are ignored.
+\end{itemize}
+
+The course provides the part itself: an emulator, in \file{lectures/L05/exercises/test/lumo_emul},
+which is a Zephyr module of its own. It plays a Lumo chip for every enabled \code{"qacademy,lumo"}
+node on \code{native_sim}’s I2C bus. The tests add it to their builds; to build with it by hand, add
+it on the command line:
+
+\begin{shell}
+-DZEPHYR_EXTRA_MODULES=$PWD/lectures/L05/exercises/test/lumo_emul
+\end{shell}
+
+\noindent Tests control it through that module's own header, \code{<qacademy/lumo_emul.h>}
+(\code{lumo_emul_set_part_id()}, \code{lumo_emul_set_counts()} and \code{lumo_emul_get_config()}),
+and through the generic sensor emulator backend, with \code{SENSOR_CHAN_LIGHT} in lux.
+
+% ---------------------------------------------------------------------
+\exerciseset{A module and a device}
+\label{c5:set:1}
+Create a directory named \code{exercise1} to work in for this exercise set. The directory is your
+module.
+
+\exercise{The module and its Kconfig option}{Code}
+\label{c5:ex:1.1}
+In this exercise you will create a module that the build can include.
+
+\task{Tasks}
+Create these files in \code{exercise1}:
+
+\begin{itemize}
+  \item \code{zephyr/module.yml}: a module named \code{qacademy-lumo}, whose CMake and Kconfig are in the
+    module’s top directory, and whose \code{dts_root} is the top directory too.
+  \item \code{Kconfig}: an option \code{LUMO}, a \code{bool} with the prompt \code{Lumo I2C ambient light
+    sensor}, which:
+\begin{itemize}
+  \item is \code{y} by default,
+  \item depends on \code{SENSOR}, and on the devicetree having an enabled \code{"qacademy,lumo"} node,
+  \item selects \code{I2C}.
+\end{itemize}
+  \item \code{CMakeLists.txt}: when \code{CONFIG_LUMO} is enabled, a Zephyr library holding
+    \code{src/lumo.c}.
+\end{itemize}
+
+\exercise{The binding}{Code}
+\label{c5:ex:1.2}
+
+\task{Tasks}
+\begin{itemize}
+  \item Create \code{dts/bindings/qacademy,lumo.yaml}: a binding for the compatible \code{"qacademy,lumo"},
+    which includes \code{sensor-device.yaml} and \code{i2c-device.yaml}, and has no properties of its
+    own yet.
+  \item Create \code{dts/bindings/vendor-prefixes.txt}, registering the vendor prefix \code{qacademy}.
+\end{itemize}
+
+\exercise{The driver’s init}{Code}
+\label{c5:ex:1.3}
+
+\task{Tasks}
+\begin{itemize}
+  \item Create \code{src/lumo_reg.h} with macros for the register addresses, the \code{GAIN} mask, and the
+    value of \code{PART_ID}, from the datasheet above.
+  \item Create \code{src/lumo.c}, the driver for the compatible \code{"qacademy,lumo"}:
+\begin{itemize}
+  \item A config struct holding the part’s \code{struct i2c_dt_spec}.
+  \item A sensor API table, defined with \code{DEVICE_API(sensor, ...)}, whose \code{sample_fetch} and
+    \code{channel_get} functions only return \code{-ENOTSUP} for now.
+  \item An init function that:
+\begin{itemize}
+  \item returns \code{-ENODEV} if the I2C bus is not ready,
+  \item reads \code{PART_ID}, and returns the error if the read fails,
+  \item returns \code{-ENODEV} if \code{PART_ID} is not \code{0x4C},
+  \item and otherwise returns 0.
+\end{itemize}
+  \item One device per enabled instance, defined with \code{SENSOR_DEVICE_DT_INST_DEFINE()} at
+    \code{POST_KERNEL} and \code{CONFIG_SENSOR_INIT_PRIORITY}. The data pointer may be \code{NULL} for
+    now.
+\end{itemize}
+\end{itemize}
+
+The tests in \file{lectures/L05/exercises/test/device} put one part at address \code{0x29}, and a
+second at \code{0x2a} whose initialization is deferred, so that a test can give it the wrong
+\code{PART_ID} first. To build and run them by hand:
+
+\begin{shell}
+west build -p -b native_sim/native/64 -d build/device \
+    lectures/L05/exercises/test/device -- \
+    -DEXERCISE_DIR=$PWD/lectures/L05/exercises/exercise1
+./build/device/zephyr/zephyr.exe
+\end{shell}
+
+\noindent The four tests must pass: the option turns itself on, the part is ready, its device has a
+sensor API, and the wrong \code{PART_ID} makes \code{device_init()} return \code{-ENODEV}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Remove \code{vendor-prefixes.txt} and build the tests again by hand. What does the build print? Then
+    build once more with \code{-DEXTRA_GEN_EDT_ARGS=--edtlib-Werror} added, as Twister does. What
+    happens?
+  \item Run \code{west build -d build/device -t initlevels}. Where do your two \code{lumo_init} calls come
+    in the list, and what comes just before them? Why must it be in that order?
+  \item The deferred part is in the \code{initlevels} list too. Why is it still not ready after boot?
+  \item Find \code{DT_HAS_QACADEMY_LUMO_ENABLED} in the build directory. Which file defines it, and why
+    could it not exist before you wrote the binding?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Reading light}
+\label{c5:set:2}
+Copy \code{exercise1} to a directory named \code{exercise2} to work in for this exercise set.
+
+\exercise{Fetch and get}{Code}
+\label{c5:ex:2.1}
+In this exercise you will implement the sensor API, at the part’s reset gain of 1.
+
+\task{Tasks}
+In \code{src/lumo.c}:
+
+\begin{itemize}
+  \item Add a data struct holding the count of the last fetch, and pass it to the device.
+  \item \code{sample_fetch} shall:
+\begin{itemize}
+  \item return \code{-ENOTSUP} for any channel other than \code{SENSOR_CHAN_ALL} and
+    \code{SENSOR_CHAN_LIGHT},
+  \item read both DATA bytes \textbf{in one transfer}, and return the error if the read fails,
+  \item store the count, and return 0.
+\end{itemize}
+  \item \code{channel_get} shall:
+\begin{itemize}
+  \item return \code{-ENOTSUP} for any channel other than \code{SENSOR_CHAN_LIGHT},
+  \item convert the stored count to lux, at 0.25 lux per count, into the \code{struct sensor_value}.
+\end{itemize}
+  \item Do no I/O in \code{channel_get}.
+\end{itemize}
+
+The tests in \file{lectures/L05/exercises/test/conversion} check, among others, that:
+
+\begin{narrowtable}{@{}llll@{}}
+  \thead{Count} & \thead{Lux} & \thead{\code{val1}} & \thead{\code{val2}} \\
+  \midrule
+  \code{0} & 0 & \code{0} & \code{0} \\
+  \code{1} & 0.25 & \code{0} & \code{250000} \\
+  \code{0x0102} & 64.5 & \code{64} & \code{500000} \\
+  \code{0xFFFF} & 16383.75 & \code{16383} & \code{750000} \\
+\end{narrowtable}
+
+The tests of Set 1 must still pass.
+
+\textbf{Hint:} \code{sys_get_le16()}, from \code{<zephyr/sys/byteorder.h>}, turns two little-endian
+bytes into a \code{uint16_t}. \code{sensor_value_from_micro()} fills in a \code{struct sensor_value}
+from millionths.
+
+\task{Reflection}
+\begin{itemize}
+  \item Replace the single transfer with two \code{i2c_reg_read_byte_dt()} calls, one per DATA byte. Do the
+    tests still pass? What could go wrong on a real part that the emulator cannot show?
+  \item Compute the lux in \code{int} instead of \code{int64_t}, by removing the cast. Which test fails?
+    Above how many counts does the multiplication overflow, and how bright is that?
+  \item \code{test_channel_get_returns_the_last_fetch} changes the part’s count between a fetch and a get.
+    Why is the old value the right answer?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{The gain}
+\label{c5:set:3}
+Copy \code{exercise2} to a directory named \code{exercise3} to work in for this exercise set.
+
+\exercise{A devicetree property}{Code}
+\label{c5:ex:3.1}
+In this exercise you will make the gain a property of the devicetree node, written to the part at
+init.
+
+\task{Tasks}
+\begin{itemize}
+  \item In the binding, add a property \code{gain}: an \code{int}, allowed to be only 1, 2, 4 or 8, with a
+    default of 1.
+  \item In \code{src/lumo.c}:
+\begin{itemize}
+  \item Add the gain and its \code{GAIN} bits to the config struct. Take the bits from the property’s index
+    in the binding’s list of allowed values, at compile time.
+  \item In the init function, after checking \code{PART_ID}, write the \code{GAIN} bits to \code{CONFIG},
+    without changing the register’s other bits, and return the error if that fails.
+  \item In \code{channel_get}, divide by the gain: at a gain of G, one count is 0.25 / G lux.
+\end{itemize}
+\end{itemize}
+
+The tests in \file{lectures/L05/exercises/test/gain} put three parts on the bus, at gains of 4, 8
+and the default, and check what each one’s \code{CONFIG} register holds after boot and what its
+counts convert to: one count at a gain of 4 is 0.0625 lux, and \code{0xFFFF} at a gain of 8 is
+2047.96875 lux. The tests of Sets 1 and 2 must still pass.
+
+\textbf{Hint:} \code{DT_INST_ENUM_IDX(inst, prop)} is the index of a property’s value in its
+binding’s \code{enum} list. \code{i2c_reg_update_byte_dt()} changes only the bits of a register that
+a mask selects.
+
+\task{Reflection}
+\begin{itemize}
+  \item Add \code{gain = <3>;} to a part in an overlay and build the gain tests. What happens, and at which
+    step of the build?
+  \item Why take the \code{GAIN} bits from \code{DT_INST_ENUM_IDX()}, rather than computing a base-2
+    logarithm of the gain at run time?
+  \item At a gain of 8, what is the smallest step between two readings, and the brightest light the part can
+    measure? What are they at a gain of 1?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{An application}
+\label{c5:set:4}
+Create an application named \code{exercise4} to work in for this exercise set.
+
+\exercise{Reading once a second}{Code}
+\label{c5:ex:4.1}
+
+\task{Tasks}
+\begin{itemize}
+  \item \code{CMakeLists.txt}: add the module in \code{../exercise3} to the build, before finding Zephyr. Do
+    \textbf{not} add the emulator.
+  \item \code{prj.conf}: enable the sensor subsystem, emulators, and logging.
+  \item \code{app.overlay}: a Lumo part labelled \code{light}, at address \code{0x29} on \code{&i2c0}, at the default gain.
+  \item \code{src/main.c}, with a log module named \code{light_app} at level \code{INF}:
+\begin{itemize}
+  \item If the part is not ready, log \code{<name> is not ready} as an error, with the device’s name, and
+    return.
+  \item Log \code{Reading <name>}.
+  \item Then, forever: fetch and get a light reading, log it as \code{<lux> lux} with two decimals, or
+    \code{Reading failed: <error>} as an error, and sleep for one second.
+\end{itemize}
+\end{itemize}
+
+Build it with the emulator, and with the emulator’s sunrise, which changes the light half a second
+before each whole second:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L05/exercises/exercise4 -- \
+    -DZEPHYR_EXTRA_MODULES=$PWD/lectures/L05/exercises/test/lumo_emul \
+    -DCONFIG_EMUL_LUMO_DAYLIGHT=y
+./build/zephyr/zephyr.exe -stop_at=6.5
+\end{shell}
+
+\noindent The output must contain, in this order, with the emulator’s own log lines in between:
+
+\begin{console}
+[00:00:00.000,000] <inf> light_app: Reading lumo@29
+[00:00:00.000,000] <inf> light_app: 0.00 lux
+[00:00:01.010,000] <inf> light_app: 0.25 lux
+[00:00:02.020,000] <inf> light_app: 42.00 lux
+[00:00:03.030,000] <inf> light_app: 320.00 lux
+[00:00:04.040,000] <inf> light_app: 2750.00 lux
+[00:00:05.050,000] <inf> light_app: 12000.00 lux
+[00:00:06.060,000] <inf> light_app: 16383.75 lux
+\end{console}
+
+\task{Reflection}
+\begin{itemize}
+  \item Build the application without \code{-DZEPHYR_EXTRA_MODULES=...}. Does it build? What does it print,
+    and why?
+  \item Build it with the emulator, but with \code{-DCONFIG_EMUL=n} added. What happens, and which
+    devicetree node is the error about?
+  \item The emulator’s last light level is 30000 lux, but the reading is 16383.75. Why? Set \code{gain =
+    <8>} in \code{app.overlay} and run it again: what do the readings become, and what does that say
+    about choosing a gain?
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\exerciseset{Tests of your own}
+\label{c5:set:5}
+Create a directory named \code{exercise5} to work in for this exercise set: a ztest application that
+tests the driver of Exercise Set~\ref{c5:set:3}.
+
+\exercise{A test suite and a Twister scenario}{Code}
+\label{c5:ex:5.1}
+
+\task{Tasks}
+\begin{itemize}
+  \item \code{CMakeLists.txt}: add the module in \code{../exercise3} to the build, and \code{src/main.c} to
+    the application. As in Set 4, do not add the emulator.
+  \item \code{prj.conf}: enable ztest, the sensor subsystem and emulators.
+  \item \code{app.overlay}: two Lumo parts, one at the default gain and one at a gain of 2.
+  \item \code{src/main.c}: a suite named \code{lumo}, whose tests check at least:
+\begin{itemize}
+  \item that both parts are ready,
+  \item counts of 0, 1 and \code{0xFFFF} at the default gain,
+  \item a count at a gain of 2,
+  \item that the gain of 2 was written to the part’s \code{CONFIG} register,
+  \item and that an unsupported channel returns \code{-ENOTSUP} from both fetch and get.
+\end{itemize}
+  \item \code{testcase.yaml}: one scenario, named \code{qacademy.l05.exercise5.lumo}, allowed only on
+    \code{native_sim/native/64}, judged by the ztest harness.
+\end{itemize}
+
+Build and run it with the emulator:
+
+\begin{shell}
+west build -p -b native_sim/native/64 lectures/L05/exercises/exercise5 -- \
+    -DZEPHYR_EXTRA_MODULES=$PWD/lectures/L05/exercises/test/lumo_emul
+./build/zephyr/zephyr.exe
+\end{shell}
+
+\noindent The suite must pass: the output must contain \code{SUITE PASS - 100.00\% [lumo]} and
+\code{PROJECT EXECUTION SUCCESSFUL}.
+
+\task{Reflection}
+\begin{itemize}
+  \item Run the scenario with Twister:
+\begin{shell}
+west twister -T lectures/L05/exercises/exercise5 -p native_sim/native/64 \
+    -x=ZEPHYR_EXTRA_MODULES=$PWD/lectures/L05/exercises/test/lumo_emul
+\end{shell}
+Where does Twister put the output of your test program? What does it report besides pass and fail?
+  \item Break your Set 3 driver on purpose: make \code{channel_get} ignore the gain. Which of your tests
+    fail? If none do, which test is missing?
+  \item Your tests and the course’s tests both pass. What would you still check on the first board with a
+    real Lumo part?
+\end{itemize}

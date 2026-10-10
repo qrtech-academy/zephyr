@@ -1,0 +1,49 @@
+% Section 5.3, from lectures/L05/README.md: the objectives, the evaluation
+% questions, and the next lecture.
+
+\section{Review}
+\label{c5:sec:review}
+
+\needspace{6\baselineskip}
+\subsection*{What you should be able to do now}
+After this chapter, you should:
+
+\begin{itemize}
+  \item Understand how Zephyr turns a devicetree node into a \code{struct device} at compile time.
+  \item Be able to write a driver that serves every instance of its compatible in the devicetree.
+  \item Understand the order devices are initialized in, and how to find it for a build.
+  \item Be able to implement a subsystem API, so that applications use the part without knowing it.
+  \item Be able to package drivers, bindings and Kconfig as a Zephyr module.
+  \item Be able to write an emulator that lets a driver run, and fail, without hardware.
+  \item Be able to test a driver with ztest, and run the tests with Twister.
+\end{itemize}
+
+\needspace{6\baselineskip}
+\subsection*{Questions to test yourself}
+You should be able to explain:
+
+\begin{enumerate}
+  \item What is the difference between a device’s \code{config} and its \code{data}, and where does each one
+    live?
+  \item How does \code{DT_DRV_COMPAT} connect a driver to the devicetree nodes it serves?
+  \item What decides the order in which devices are initialized, and how can you see it for a build?
+  \item What does \code{device_is_ready()} return for a device whose init function failed?
+  \item Why does the driver’s Kconfig option depend on \code{DT_HAS_QACADEMY_THERMO_ENABLED}?
+  \item Why does a sensor driver split reading into \code{sample_fetch} and \code{channel_get}?
+  \item What does an emulator make testable that a real part does not?
+  \item What is the difference between a ztest suite and a Twister scenario?
+  \item What goes wrong without the module’s \code{vendor-prefixes.txt}, and why only under Twister?
+\end{enumerate}
+
+\needspace{6\baselineskip}
+\subsection*{Looking ahead}
+Chapter~\ref{c6:ch} is about subsystems and debugging:
+
+\begin{itemize}
+  \item The shell, with commands of your own.
+  \item Settings that survive a restart, on the simulated flash.
+  \item Networking through the host’s sockets.
+  \item Debugging on the host: GDB, sanitizers, fatal errors and coverage.
+\end{itemize}
+
+You will make the program talk back, remember things, and crash usefully.

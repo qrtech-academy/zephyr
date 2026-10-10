@@ -1,0 +1,41 @@
+% Chapter 5, typeset from lectures/L05: the README is the opener and the closing
+% review, and each appendix is a section, in the same order and with the same subsections.
+
+\chapter{Writing a Driver}
+\label{c5:ch:driver}\label{c5:ch}
+
+{\large\itshape A driver for a part that does not exist.\par}
+
+\begin{chapterbox}{In this chapter}
+\begin{itemize}
+  \item The device driver model: \code{struct device}, the API struct, and per-instance config and data.
+  \item Defining devices from the devicetree: \code{DT_DRV_COMPAT}, \code{DEVICE_DT_INST_DEFINE()} and
+    \code{DT_INST_FOREACH_STATUS_OKAY()}.
+  \item Initialization: init levels, priorities, what \code{device_is_ready()} reports after a failure, and
+    deferring a device’s initialization with \code{zephyr,deferred-init} and \code{device_init()}.
+  \item A binding and a Kconfig option for a new part, and a Kconfig option that turns itself on when the
+    devicetree has the part.
+  \item Implementing a subsystem API: the sensor API’s \code{sample_fetch} and \code{channel_get}.
+  \item Zephyr modules: keeping drivers out of tree, with \code{zephyr/module.yml}.
+  \item Emulators: a chip in software, on \code{native_sim}’s emulated I2C bus, and the sensor emulator
+    backend.
+  \item ztest: suites, tests, assertions, and hooks that run around every test.
+  \item Twister: \code{testcase.yaml}, scenarios, and running a test suite in one command.
+\end{itemize}
+\end{chapterbox}
+
+Zephyr's device model is what turns a node in the devicetree into a \code{struct device} the
+application can use without knowing what is behind it. This chapter writes one: a binding, a Kconfig
+option that turns itself on when the devicetree has the part, a driver that serves every instance of
+it, and an implementation of the sensor API, so the application never names the chip at all.
+
+Then it does what no board lets you do. The part is emulated, in software, on \code{native_sim}'s
+I2C bus, and the emulator can be told to answer wrongly: a bad identity register, a conversion that
+never finishes. That is what makes the driver testable, and \secref{c5:app:b} is about the testing:
+ztest for the tests themselves, Twister for running them. The worked example is
+\file{lectures/L05/examples/thermo}.
+
+\input{chapters/05/drivers}
+\input{chapters/05/testing}
+\input{chapters/05/summary}
+\input{chapters/05/exercises}

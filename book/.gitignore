@@ -1,0 +1,3 @@
+# Everything the LuaLaTeX build writes along the way. The PDF it ends with, zephyr-rtos.pdf, is
+# committed, so it isn't listed here.
+build/

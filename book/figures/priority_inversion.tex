@@ -1,0 +1,92 @@
+% Priority inversion, and what a mutex does about it: the two runs of the priority_inversion
+% example, drawn on one scale. Every number is from the example's own output, which §4.1 and the
+% example's README quote:
+%
+%   semaphore: low 0..31, medium 31..531, low 531..600, high runs at 600 (waited 579 ms)
+%   mutex:     low 0..100 (boosted at 21), high at 100 (waited 79 ms), medium 100..600
+%
+% A solid bar is a thread with the CPU, a dashed one a thread that is ready or blocked but not
+% running. A label only ever sits inside a bar wide enough to hold it; the rest are set beside
+% their bar.
+\begin{tikzpicture}[
+    x=1cm, y=1cm, font=\footnotesize,
+    bar/.style={minimum height=0.5cm, inner sep=0pt, outer sep=0pt, rectangle,
+      font=\scriptsize},
+    run/.style={bar, draw=#1, fill=fill#1, line width=0.6pt, text=#1!55!black},
+    wait/.style={bar, draw=#1, fill=fill#1!35, line width=0.6pt, text=#1!55!black,
+      dash pattern=on 2.5pt off 1.5pt},
+    idle/.style={draw=muted!70, line width=0.5pt, dash pattern=on 1.5pt off 1.5pt},
+    lane/.style={align=right, anchor=east, font=\scriptsize\bfseries, text=#1},
+    tick/.style={font=\scriptsize, text=ink, anchor=north},
+    panel/.style={align=left, anchor=west, font=\small\bfseries, text=ink},
+    beside/.style={anchor=west, font=\scriptsize, text=#1, inner sep=0pt},
+  ]
+  % 600 ms of simulated time across 9.6 cm, and one lane per thread.
+  \def\ms#1{#1*0.016}
+  \newcommand{\lanebar}[5]{%
+    \node[#1, minimum width={(\ms{#3}-\ms{#2})*1cm - 0.04cm}, anchor=west]
+      at ({\ms{#2}+0.02}, #4) {#5};}
+
+  \foreach \dy in {0, -4.1} {
+    \draw[-{Latex[length=2mm]}, line width=0.6pt, ink] (0, \dy-0.55) -- (10.1, \dy-0.55)
+      node[right, font=\scriptsize\scshape, text=ink] {ms};
+    \foreach \t in {0, 100, 200, 300, 400, 500, 600} {
+      \draw[line width=0.6pt, ink] ({\ms{\t}}, \dy-0.46) -- ({\ms{\t}}, \dy-0.64);
+      \node[tick] at ({\ms{\t}}, \dy-0.62) {\t};
+    }
+    \node[lane=accent] at (-0.25, \dy-1.25) {high\\[-0.3ex]\mdseries\scriptsize priority 5};
+    \node[lane=accent2] at (-0.25, \dy-2.0) {medium\\[-0.3ex]\mdseries\scriptsize priority 6};
+    \node[lane=accent3] at (-0.25, \dy-2.75) {low\\[-0.3ex]\mdseries\scriptsize priority 7};
+  }
+
+  % ---------------------------------------------------------------- the semaphore run
+  \node[panel] at (-1.75, 0.2) {With a semaphore};
+  \node[anchor=west, font=\scriptsize\itshape, text=muted] at (1.75, 0.2)
+    {high waits 579 ms, for a thread that never touches the lock};
+
+  \draw[idle] (0, -1.25) -- ({\ms{21}}, -1.25);
+  \lanebar{wait=accent}{21}{600}{-1.25}{blocked on the semaphore, 579 ms}
+  \lanebar{run=accent}{600}{620}{-1.25}{}
+
+  \draw[idle] (0, -2.0) -- ({\ms{31}}, -2.0);
+  \lanebar{run=accent2}{31}{531}{-2.0}{computing, needs no lock}
+  \draw[idle] ({\ms{531}}, -2.0) -- ({\ms{620}}, -2.0);
+
+  \lanebar{run=accent3}{0}{31}{-2.75}{}
+  \lanebar{wait=accent3}{31}{531}{-2.75}{preempted, still holding the semaphore}
+  \lanebar{run=accent3}{531}{600}{-2.75}{}
+  \node[beside=accent3!60!black] at ({\ms{608}}, -2.75) {gives it back};
+
+  \draw[decorate, decoration={brace, mirror, amplitude=4pt}, line width=0.6pt, accent]
+    ({\ms{31}}, -3.06) -- ({\ms{531}}, -3.06)
+    node[midway, below=4pt, align=center, font=\scriptsize, text=accent]
+      {the inversion: the highest-priority thread waits for the middle one};
+
+  % ---------------------------------------------------------------- the mutex run
+  \node[panel] at (-1.75, -3.9) {With a mutex};
+  \node[anchor=west, font=\scriptsize\itshape, text=muted] at (1.45, -3.9)
+    {high waits 79 ms: the rest of low's work, and nothing more};
+
+  \draw[idle] (0, -5.35) -- ({\ms{21}}, -5.35);
+  \lanebar{wait=accent}{21}{100}{-5.35}{}
+  \lanebar{run=accent}{100}{120}{-5.35}{}
+  \node[beside=accent!60!black] at ({\ms{128}}, -5.35) {blocked 79 ms, then runs};
+
+  \draw[idle] (0, -6.1) -- ({\ms{31}}, -6.1);
+  \lanebar{wait=accent2}{31}{100}{-6.1}{ready}
+  \lanebar{run=accent2}{100}{600}{-6.1}{computing, needs no lock}
+
+  \lanebar{run=accent3}{0}{100}{-6.85}{}
+  \draw[idle] ({\ms{100}}, -6.85) -- ({\ms{620}}, -6.85);
+  % Set on white, so the text does not sit on the dashes of the idle line behind it.
+  \node[beside=accent3!60!black, fill=white, inner sep=1pt] at ({\ms{108}}, -6.85)
+    {holds the mutex to 100 ms, then gives it back};
+
+  \draw[{Latex[length=1.6mm]}-, line width=0.5pt, accent3!70!black]
+    ({\ms{21}}, -7.16) -- ({\ms{21}}, -7.44) -- ({\ms{60}}, -7.44);
+  % Two lines of its own, rather than a wrapped paragraph, so that no word is hyphenated.
+  \node[anchor=north west, align=left, font=\scriptsize, text=accent3!70!black, inner sep=0pt]
+    at ({\ms{62}}, -7.36)
+    {from here low runs at high's priority 5, so medium cannot take the CPU;\\[-0.3ex]
+     it drops back to 7 when it unlocks, and finishes last};
+\end{tikzpicture}

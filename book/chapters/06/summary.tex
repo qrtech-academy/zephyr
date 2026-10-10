@@ -1,0 +1,45 @@
+% Section 6.3, from lectures/L06/README.md: the objectives, the evaluation
+% questions, and the next lecture.
+
+\section{Review}
+\label{c6:sec:review}
+
+\needspace{6\baselineskip}
+\subsection*{What you should be able to do now}
+After this chapter, you should:
+
+\begin{itemize}
+  \item Be able to add shell commands to an application, and use the shell to inspect a running system.
+  \item Be able to store and load settings, and understand where they are stored on \code{native_sim}.
+  \item Be able to write TCP and UDP servers with Zephyr’s socket API, and reach them from the host.
+  \item Understand how Zephyr handles a fatal error, and be able to decide what happens after one.
+  \item Be able to find memory errors and undefined behaviour with the sanitizers.
+  \item Be able to debug a \code{native_sim} program with GDB, and measure test coverage.
+\end{itemize}
+
+\needspace{6\baselineskip}
+\subsection*{Questions to test yourself}
+You should be able to explain:
+
+\begin{enumerate}
+  \item What does a shell command handler receive, and how does it report an error?
+  \item Why can \code{log enable dbg} not show debug messages from a module compiled at level \code{INF}?
+  \item Where does the settings subsystem store its data on \code{native_sim}, and what makes a run a first
+    boot?
+  \item What does the offloaded sockets driver do, and why does it need no network setup or root?
+  \item What is the difference between \code{k_oops()} and \code{k_panic()}, and what does
+    \code{k_sys_fatal_error_handler()} decide?
+  \item Why does AddressSanitizer work on \code{native_sim}, and why is it not available when the same code
+    is built for a board?
+  \item Why does a UBSan report not stop the program, while an ASan report does?
+  \item What would change, and what would not, if the driver from Chapter~\ref{c5:ch} and these subsystems
+    moved to a real board?
+\end{enumerate}
+
+\needspace{6\baselineskip}
+\subsection*{Looking ahead}
+This is the last chapter: you have built, configured, described, scheduled, driven, tested and
+debugged a Zephyr application, and every one of those programs runs on a board as it stands. What is
+left is the board itself. Moving the same code onto one, flashing it, and testing it there, is the
+business of two other courses in this track, \emph{Bootloaders and the Boot Path} and
+\emph{Hardware-in-the-Loop Testing}.

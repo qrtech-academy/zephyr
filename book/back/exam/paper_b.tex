@@ -1,0 +1,273 @@
+% Appendix: Paper B, from exam/paper_b.md. The questions only; the model answers are a separate
+% appendix, as they are a separate file, so the paper can be sat without them in view.
+
+\chapter{Self-Assessment Paper B}
+\label{exb:ch:paper}
+
+\noindent\textbf{Time:} 3 hours. \textbf{Closed book.} No compiler, no workspace and no reference
+material. \textbf{Total: 100 marks.}
+
+This paper exists to test your own skills and knowledge. It is not a qualification and it gates
+nothing. It draws on all six chapters, so \textbf{it is meant to be taken once you have finished
+the book}. The model answers are in Appendix~\ref{ansb:ch:answers}.
+
+\section*{Rubric}
+\textbf{Zephyr 4.4 and the board \code{native_sim/native/64}} are assumed throughout, built with the
+host's GCC, as in the book. Headers may be assumed included unless a question asks you to name them.
+
+\textbf{Code is marked on semantics, not on syntax.} A missing \code{#include}, a missing semicolon
+or a brace in the wrong column costs nothing. A missing \code{device_is_ready()} check costs
+everything.
+
+\textbf{Where a question says ``in the book's style''}, it means the conventions used in the
+chapters:
+\begin{itemize}
+  \item Zephyr's own C style: \code{snake_case}, the kernel's \code{k_} and \code{K_} spellings.
+  \item Application options prefixed \code{APP_}, and read with \code{IS_ENABLED()} rather than
+    \code{#ifdef} wherever both would work.
+  \item Log modules rather than \code{printk()} in anything that is not a one-off.
+  \item Hardware taken from the devicetree, never a pin number written into the C.
+\end{itemize}
+
+\textbf{The simulator's behaviour may be assumed} without deriving it: 100 ticks per second, a sleep
+that ends on the tick after the one it asked for, simulated time that advances only when every
+thread is waiting, immediate logging, and no thread analyzer, stack protection or userspace.
+
+\textbf{Where a question says ``state the consequence''}, naming a cause earns half the marks and
+saying what it does to the running program earns the other half. ``This is wrong'' scores nothing.
+
+\textbf{Where a question asks you to write code}, documentation comments are not required and are
+not marked. Write the code.
+
+\subsection*{Marks}
+
+\begin{narrowtable}{@{}lcccccccc@{}}
+  \thead{Question} & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 \\
+  \midrule
+  \thead{Marks} & 12 & 12 & 13 & 13 & 12 & 13 & 13 & 12 \\
+\end{narrowtable}
+
+% ------------------------------------------------------------------------------------------
+\question{The workspace and the build}{12}
+\label{exb:q:1}
+
+\qpart{a} Write the \file{west.yml} of a workspace that pins Zephyr 4.4.2, checks it out into
+\file{deps/zephyr}, fetches only the pinned commit rather than the project's history, makes Zephyr's
+own west commands available, and treats the repository holding the manifest as the workspace itself.
+Then state what \code{west update} does, and name one thing it does \textbf{not} do. \worth{4}
+
+\qpart{b} Write the three files of the smallest application that logs \code{ready} at level INF:
+\file{CMakeLists.txt}, \file{prj.conf} and \file{src/main.c}. State what \code{find_package(Zephyr)}
+does, and why \code{project()} must come after it. \worth{4}
+
+\qpart{c} Write the command that builds that application for \code{native_sim/native/64} from the
+repository root, discarding any earlier build, and the command that then runs it. Write the command
+that builds the same application with an extra configuration file \file{debug.conf} merged on top of
+\file{prj.conf}.
+
+Then name three files under \file{build/} that record what the build decided, and state what each
+holds. \worth{4}
+
+% ------------------------------------------------------------------------------------------
+\question{Configuring an application}{12}
+\label{exb:q:2}
+
+\qpart{a} An application samples a temperature and can warn when it gets too hot. Write its
+\file{Kconfig} file, declaring:
+\begin{itemize}
+  \item \code{APP_SAMPLE_PERIOD_MS}, an integer number of milliseconds between samples, between 10
+    and 10000, 1000 unless set;
+  \item \code{APP_ALARM}, off unless set, which turns the warning on;
+  \item \code{APP_ALARM_LIMIT_C}, an integer with the default 30, which exists only when the alarm
+    does.
+\end{itemize}
+Write the \file{prj.conf} that samples every 250 ms with the alarm on. Then state what the build
+does if a \file{prj.conf} sets \code{CONFIG_APP_ALARM_LIMIT_C=35} while leaving the alarm off.
+\worth{5}
+
+\qpart{b} Write the C that logs each reading through a log module named \code{sampler} and, when the
+alarm is enabled, warns about a reading at or above the limit. The warning lives in
+\file{src/alarm.c}, which is compiled only when the alarm is enabled; write the line in
+\file{CMakeLists.txt} that arranges that, and write the call site in \file{src/main.c}.
+
+State why the call site uses \code{IS_ENABLED()} rather than \code{#ifdef}, and what the compiler
+does with the branch that cannot run. \worth{4}
+
+\qpart{c} Name, in the order the build applies them, four places a Kconfig option's value can come
+from, and state which one wins.
+
+Then: a build directory is created with \code{-DCONFIG_APP_SAMPLE_PERIOD_MS=50} on the command line.
+Later the same directory is built again, without \code{-p} and without that option. State which
+period that build uses, and why. \worth{3}
+
+% ------------------------------------------------------------------------------------------
+\question{Describing hardware}{13}
+\label{exb:q:3}
+A product has heaters, each switched by one GPIO pin. They are not on a bus, and there is no
+existing binding for them.
+
+\qpart{a} Write the binding \code{qacademy,heater}. A node shall have a required
+\code{control-gpios} giving the pin that switches the heater, a required string \code{zone} naming
+the area it warms, and an integer \code{max-power-percent} which is 100 unless the node says
+otherwise.
+
+State where in an application the file goes, and what else the build needs before it will accept the
+vendor prefix \code{qacademy} without complaint. \worth{5}
+
+\qpart{b} Write the overlay that adds two of them: \code{heater_a} in zone \code{cabin} on
+\code{gpio0} pin 2, active high; \code{heater_b} in zone \code{tank} on \code{gpio0} pin 3, active
+low, limited to 60\,\%. Give the first the alias \code{primary-heater}.
+
+State the file name that makes the build pick the overlay up without being told, and state what the
+overlay does to the board's own devicetree. \worth{4}
+
+\qpart{c} Write the C that builds a table of every enabled heater \textbf{at compile time}, holding
+for each one its GPIO specification, its zone and its power limit, and then configures each pin as
+an inactive output. Use the table to log each heater's zone and pin.
+
+State what changes in that table if \code{heater_b} is given \code{status = "disabled"}, and state
+what happens instead if its \code{zone} property is deleted. \worth{4}
+
+% ------------------------------------------------------------------------------------------
+\question{Threads and time}{13}
+\label{exb:q:4}
+A system has three activities:
+\begin{enumerate}
+  \item a control loop that must run every 10 ms and must not be late;
+  \item a display that is refreshed every 200 ms;
+  \item a logger that writes to flash, takes up to 50 ms, and may be late.
+\end{enumerate}
+
+\qpart{a} Choose a priority for each, say for each whether it is cooperative or preemptible, and
+justify the three choices in terms of what happens when two of them are ready at once. Write the
+three \code{K_THREAD_DEFINE()} lines. \worth{5}
+
+\qpart{b} Write the control loop's body so that it runs every 10 ms without drift, and explain why a
+loop whose body ends with \code{k_msleep(10)} does drift. Name a second way to get the same result,
+and state what makes it equivalent. \worth{4}
+
+\qpart{c} On \code{native_sim}, \code{k_msleep(30)} returns after 40 ms, while a periodic timer
+started with \code{k_timer_start(&t, K_MSEC(30), K_MSEC(30))} expires at 30 ms, 60 ms and 90 ms.
+Explain both.
+
+Then state what \code{CONFIG_SYS_CLOCK_TICKS_PER_SEC=1000} changes about the first, and name one
+cost of setting it. \worth{4}
+
+% ------------------------------------------------------------------------------------------
+\question{Interrupts, work and the simulator}{12}
+\label{exb:q:5}
+
+\qpart{a} Write a sampler that takes a reading every \code{CONFIG_APP_SAMPLE_PERIOD_MS}
+milliseconds: a \code{k_timer} whose expiry function hands the reading over to the system work
+queue, and a work handler that logs it.
+
+Name two things the expiry function must not do, and state for each what would happen if it did.
+State which thread the work handler runs in. \worth{5}
+
+\qpart{b} Extend it: if no sample has been taken for 250 ms, log \code{idle}. Write the code, and
+state why it uses \code{k_work_reschedule()} rather than \code{k_work_schedule()}.
+
+State, to the nearest tick, when the message is logged if the last sample was taken at 500 ms.
+\worth{4}
+
+\qpart{c} A colleague waits for the first sample like this, with \code{ready} set by the timer's
+expiry function:
+
+\begin{ccode}
+static volatile bool ready;
+
+while (!ready) {
+}
+\end{ccode}
+
+\noindent State what this program does on \code{native_sim}, and why. Rewrite the wait correctly.
+\worth{3}
+
+% ------------------------------------------------------------------------------------------
+\question{Threads that must agree}{13}
+\label{exb:q:6}
+
+\qpart{a} A sampler thread produces a \code{struct sample} every 100 ms; a storage thread takes
+250 ms to write each one away. Write the message queue between them, the producer's put and the
+consumer's get, so that the sampler never waits and a sample that does not fit is counted as
+dropped.
+
+State what \code{k_msgq_put()} does with the struct, and why that means the producer's local
+variable may go out of scope immediately. \worth{5}
+
+\qpart{b} A shared calibration table is guarded by a semaphore created with
+\code{K_SEM_DEFINE(lock, 1, 1)}. Rewrite the take and the give with the primitive the book would use
+instead, and state the two things it gives you that the semaphore does not.
+
+Then: three threads, at priorities 5, 6 and 7, use the CPU; the one at 7 holds the guard and the one
+at 5 wants it. Name what the semaphore version suffers from, and state what the replacement bounds
+the highest-priority thread's wait to. \worth{4}
+
+\qpart{c} The same sample is now wanted by two independent parts of the application. Write a zbus
+channel carrying it, with a validator that rejects a reading outside $-40$ to 125 degrees, one
+listener and one subscriber.
+
+State in which thread each of the two observers runs, and explain why a subscriber can miss a
+message that a listener cannot. \worth{4}
+
+% ------------------------------------------------------------------------------------------
+\question{A driver of your own}{13}
+\label{exb:q:7}
+Baro is a made-up I2C pressure sensor. Its register map is:
+
+\begin{narrowtable}{@{}lll@{}}
+  \thead{Register} & \thead{Address} & \thead{Contents} \\
+  \midrule
+  \code{WHO_AM_I} & \code{0x0F} & Reads \code{0x5B}, always. \\
+  \code{PRESSURE_L} & \code{0x28} & The low byte of the reading. \\
+  \code{PRESSURE_H} & \code{0x29} & The high byte. The reading is unsigned, in steps of 10 Pa. \\
+\end{narrowtable}
+
+\qpart{a} Write the driver, as a devicetree-instantiated driver in Zephyr's device model: the
+compatible it serves, its configuration and its run-time data, an initialization function that
+refuses a part that does not identify itself, the two sensor API functions that read the pressure,
+and the macro that defines one device per devicetree node.
+
+The sensor API reports pressure in kilopascals, so a reading of 10132 counts is \code{val1} 101 and
+\code{val2} 320000. \worth{6}
+
+\qpart{b} The driver is shipped as a Zephyr module. Write its \file{zephyr/module.yml}, the Kconfig
+option that turns the driver on, and the binding \code{qacademy,baro}.
+
+State why the Kconfig option depends on \code{DT_HAS_QACADEMY_BARO_ENABLED}, and what that arranges
+for an application that does not have the part. \worth{4}
+
+\qpart{c} An emulator for the part provides:
+
+\begin{ccode}
+void baro_emul_set_raw(const struct emul *target, uint16_t raw);
+\end{ccode}
+
+\noindent Write a ztest suite with two tests: that the device is ready, and that 10132 counts is
+read back as 101.32 kPa. Name the file that tells Twister how to run it.
+
+State what \code{device_is_ready()} returns for a device whose initialization function returned
+\code{-ENODEV}, and what the application must therefore do. \worth{3}
+
+% ------------------------------------------------------------------------------------------
+\question{Making it usable}{12}
+\label{exb:q:8}
+
+\qpart{a} Write the shell command \code{setpoint}, with two subcommands: \code{setpoint get}, which
+prints the current value, and \code{setpoint set <celsius>}, which accepts $-40$ to 125 and rejects
+anything else with a message.
+
+State what the shell has already checked before your \code{set} handler runs, and what the handler's
+return value is used for. \worth{5}
+
+\qpart{b} Make the setpoint survive a restart. Write the settings handler and the call that stores
+the value, and name the Kconfig options the application needs.
+
+State where the value is kept on \code{native_sim}, and name two ways to make the next run behave as
+a first boot. \worth{4}
+
+\qpart{c} Write a fatal error handler that aborts only the offending thread when a thread calls
+\code{k_oops()}, but halts the system for anything else.
+
+State what the process's exit status is on \code{native_sim} when it halts, and why returning from a
+kernel panic is not allowed. \worth{3}

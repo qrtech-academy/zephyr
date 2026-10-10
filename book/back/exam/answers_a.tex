@@ -1,0 +1,611 @@
+% Appendix: the model answers to Paper A, from exam/paper_a_solutions.md.
+
+% The answers' headings are labelled ansa:q:N.
+\renewcommand{\answerprefix}{ansa}
+
+\chapter{Model Answers to Paper A}
+\label{ansa:ch:answers}
+
+Marks are shown per part. Method carries them: a correct diagnosis with a clumsy fix is worth more
+than a correct fix with no diagnosis, and several later parts consume earlier answers, so an error
+should be followed through rather than penalised twice.
+
+Code is marked on semantics. Missing includes, missing semicolons and misplaced braces cost nothing.
+
+% ==========================================================================================
+\answersection{1}{The workspace and the build}{12}
+
+\answerpart{a}{3}
+\textbf{What the build is looking for.} Zephyr chooses a toolchain before it compiles anything. If
+\code{ZEPHYR_TOOLCHAIN_VARIANT} is not set, it assumes the Zephyr SDK --- the cross-compilers for
+real microcontrollers --- and asks CMake to find the SDK's package configuration file. Nothing has
+installed one, so configuration fails before a single source file is read. \worth{1}
+
+\textbf{The fix} is to source the environment file in that terminal:
+
+\begin{shell}
+source env.sh
+\end{shell}
+
+\noindent It activates the Python environment that holds west and Twister, and sets two variables:
+\code{ZEPHYR_BASE}, which says where Zephyr is (\file{deps/zephyr}), and
+\code{ZEPHYR_TOOLCHAIN_VARIANT=host}, which tells Zephyr to build with the host's own GCC.
+\worth{1}
+
+\textbf{Why no SDK is needed.} A \code{native_sim} image is an ordinary Linux executable: the
+kernel, the drivers and the application are compiled for the host CPU by the host compiler. The SDK
+exists to cross-compile for a target, and this book never leaves the host. \worth{1}
+
+\code{make setup} having finished is a red herring, and saying so earns the first mark: setup
+creates \file{.venv}, writes \file{.west/config} and fetches Zephyr, all of which persist, whereas
+\code{source env.sh} is per terminal and is what the message is complaining about.
+
+\answerpart{b}{3}
+\textbf{The three files}, and what each contributes:
+\begin{itemize}
+  \item \textbf{\file{CMakeLists.txt}} --- how to build it: it finds the Zephyr package and adds the
+    application's own sources to the \code{app} target.
+  \item \textbf{\file{prj.conf}} --- how to configure Zephyr for it: a list of Kconfig settings
+    applied on top of the board's defaults. It must exist even if it is empty, which is exactly what
+    this error says.
+  \item \textbf{\file{src/}} --- the code, with a \code{main()}.
+\end{itemize}
+\credit{1.5 marks: half for naming all three, half for what they do}
+
+\textbf{The line that does most of the work} is:
+
+\begin{cmakecode}
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+\end{cmakecode}
+
+\noindent It is where Zephyr's build system takes over: it reads the board, processes the
+devicetree, runs Kconfig, sets Zephyr up as a set of CMake libraries, and creates the \code{app}
+target. \worth{1}
+
+\textbf{Why \code{project()} comes after it.} Zephyr selects the compiler as part of that call.
+CMake's \code{project()} is what makes CMake look for a compiler, so it must not run until the
+choice has been made. \credit{0.5 marks}
+
+\answerpart{c}{4}
+\textbf{What \code{west update} does.} It reads the manifest and makes the workspace match it: it
+clones the \code{zephyr} project from \url{https://github.com/zephyrproject-rtos/zephyr} --- the
+remote's \code{url-base} followed by the project's name --- and checks out the revision
+\code{v4.4.2}. With \code{clone-depth: 1} it fetches only that commit rather than Zephyr's history.
+\code{path: deps/zephyr} puts it in \file{deps/zephyr}, inside the repository, and
+\code{self: path: .} says the manifest repository is the workspace directory itself. \worth{2}
+
+\textbf{Without \code{west-commands}.} West would know only its own built-in commands.
+\code{west build} and \code{west twister} are extension commands that Zephyr provides, and that line
+is what tells west where Zephyr declares them. \worth{1}
+
+\textbf{Moving to a newer release} is two steps: change \code{revision:} in \file{west.yml}, and run
+\code{west update}. West never moves a project on its own; pulling the repository changes the
+manifest, and \code{west update} is what makes the checkout match it. \credit{0.5 marks}
+
+\textbf{Why Zephyr's own manifest is not imported.} It lists some eighty modules --- vendor HALs,
+cryptography libraries, file systems --- none of which \code{native_sim} needs, and together they
+are several gigabytes. A product would import the few it needs by name. \credit{0.5 marks}
+
+\answerpart{d}{2}
+\textbf{Why the level is still 2.} A \code{-DCONFIG_...} argument is stored in the build directory's
+CMake cache, and every later build in that directory keeps using it until the directory is rebuilt
+pristine or the option is given a new value. The second build inherited it. \worth{1}
+
+\textbf{What proves the configuration.} Read it back from the build:
+
+\begin{shell}
+grep CONFIG_LOG_DEFAULT_LEVEL build/zephyr/.config
+\end{shell}
+
+\noindent \file{build/zephyr/.config} holds every option and the value the build actually used.
+Credit \code{west build -t menuconfig} as an alternative, as long as the candidate says it shows the
+same file's contents. A pristine build (\code{west build -p}) is the fix, not the proof. \worth{1}
+
+% ==========================================================================================
+\answersection{2}{Kconfig and logging}{12}
+
+\answerpart{a}{4}
+\textbf{What Kconfig did.} An assignment in \file{prj.conf} is a \emph{request}, not a command.
+\code{SHELL_LOG_BACKEND} depends on \code{SHELL}, which is \code{n}, so the symbol cannot be
+\code{y} and Kconfig left it at \code{n}. The warning says exactly that: assigned \code{y}, got
+\code{n}, because of the unsatisfied dependency \code{SHELL (=n)}. \credit{1.5 marks}
+
+\textbf{Why the build stops.} Zephyr turns that warning into an error. The alternative is an image
+built without the feature that \file{prj.conf} plainly asks for, and nobody finds out until the
+behaviour is missing at run time. Failing the build makes a request that did not take impossible to
+ignore. \worth{1}
+
+\textbf{Two ways to succeed}, either of which is the right answer depending on intent:
+\begin{itemize}
+  \item Enable the dependency as well: \code{CONFIG_SHELL=y} alongside it.
+  \item Remove the assignment, having decided the feature is not wanted.
+\end{itemize}
+\worth{1}
+
+\textbf{Where to read the result.} \file{build/zephyr/.config}. The same values reach C through
+\file{build/zephyr/include/generated/zephyr/autoconf.h}. \credit{0.5 marks}
+
+\answerpart{b}{3}
+\textbf{What the compiler did.} Nothing at all. \code{CONFIG_APP_FARENHEIT} is not defined, and an
+undefined macro inside \code{IS_ENABLED()} is indistinguishable from an option that is off, so the
+expression is the constant \code{0} and the compiler removes the branch. There is no diagnostic,
+because nothing is wrong as far as C is concerned. \worth{1}
+
+\textbf{The consequence.} The feature can never be switched on. \code{CONFIG_APP_FAHRENHEIT=y} in
+\file{prj.conf} takes effect in the configuration, \file{.config} shows it enabled, and the program
+still prints Celsius. The build and the configuration both look right; only the behaviour is wrong.
+\worth{1}
+
+\textbf{Why the same misspelling in \file{prj.conf} would not survive.} Kconfig knows which symbols
+exist. An assignment to a symbol that does not exist is a warning, and Zephyr aborts the build on
+it, exactly as in part (a). \credit{0.5 marks}
+
+\textbf{What would have caught it.} A test that checks the program's output in both configurations
+--- the book's own exercise suites do this, building each set twice. Credit also Zephyr's compliance
+check for undefined Kconfig references, and credit a candidate who says that a review looking for
+\code{CONFIG_} names not present in \file{.config} would find it. \credit{0.5 marks}
+
+\answerpart{c}{3}
+\textbf{What is printed.} The error and the warning only. Level 2 is \code{WRN}, and the levels run
+\code{NONE} 0, \code{ERR} 1, \code{WRN} 2, \code{INF} 3, \code{DBG} 4. A module registered without a
+level takes \code{CONFIG_LOG_DEFAULT_LEVEL}, so this module's level is 2. \worth{1}
+
+\textbf{Whether the others are in the binary.} No. A module's level is a \textbf{compile-time}
+filter: the \code{LOG_INF()} and \code{LOG_DBG()} calls expand to nothing, and their format strings
+are not in the image either. That is why debug logging can be left in the source for free, and why
+turning it on needs a rebuild rather than a setting. \worth{1}
+
+\textbf{How to demonstrate it.} Look for the format strings in the executable:
+
+\begin{shell}
+strings build/zephyr/zephyr.exe | grep "Temperature"
+\end{shell}
+
+\noindent The two surviving messages are there; the filtered ones are not. Credit any equivalent:
+comparing the two builds' sizes, or inspecting the map file. \worth{1}
+
+\answerpart{d}{2}
+\begin{itemize}
+  \item \textbf{Immediate} (\code{native_sim}'s default): the message is formatted and written by
+    the thread that logged it, in order with \code{printk()} and with everything else. The cost is
+    paid at the call, which on a UART would be milliseconds inside whatever was running.
+  \item \textbf{Deferred} (the default on a board): the call only copies the arguments into a
+    buffer, and a low-priority log thread formats and prints later. Logging from an interrupt
+    handler is then cheap, but a message and a \code{printk()} after it can appear in the opposite
+    order, and messages still in the buffer are lost if the system dies.
+\end{itemize}
+\credit{1 mark each; half for naming the modes without a consequence}
+
+% ==========================================================================================
+\answersection{3}{Devicetree, bindings and overlays}{13}
+
+\answerpart{a}{5}
+\textbf{What \code{32} is.} A node's \textbf{ordinal}: the number the build gives each devicetree
+node, in dependency order. \code{__device_dts_ord_32} is the name of the device object for node 32.
+Ordinals belong to one build: the same node can be 22 in one application and 32 in another, so the
+number means nothing until it is looked up in \emph{that} build's
+\file{build/zephyr/include/generated/zephyr/devicetree_generated.h}, which lists the ordinal beside
+the node's path. \worth{2}
+
+\textbf{The first message is a compile error.} The device object was never \emph{declared}, which
+means the build generated nothing for that node: the node is disabled, or absent.
+\code{DEVICE_DT_GET()} expanded to the address of a symbol that does not exist. The ``did you mean''
+is noise --- 38 is simply the nearest number that does exist. \worth{1}
+
+\textbf{The second is a link error.} The name was declared, so the node exists and is enabled, but
+no translation unit ever \emph{defined} that device: no driver was built for it. The node is there,
+the driver is not. \worth{1}
+
+\textbf{One change for each.} For the first, disable the node:
+
+\begin{dtscode}
+&gpio0 {
+	status = "disabled";
+};
+\end{dtscode}
+
+\noindent For the second, leave the node enabled and remove the driver, for example by building with
+\code{-DCONFIG_GPIO=n}. \worth{1}
+
+The pair is worth learning as a pair: \emph{undeclared} means look at the devicetree,
+\emph{undefined reference} means look at Kconfig.
+
+\answerpart{b}{4}
+\textbf{The overlay that omits \code{threshold-c}} fails during configuration, when the tree is
+checked against its bindings, before any C is compiled:
+
+\begin{console}
+devicetree error: 'threshold-c' is marked as required in 'properties:' in
+'.../qacademy,alarm.yaml', but does not appear in <Node /alarm0 in .../app.overlay:12>
+\end{console}
+\credit{1.5 marks}
+
+\textbf{The overlay that adds \code{hysteresis-c}} configures without complaint: the property is in
+the tree but the binding does not declare it, so no macro is generated for it. The failure comes
+later, when the C is compiled and \code{DT_PROP()} expands to a name that does not exist:
+
+\begin{console}
+error: 'DT_N_S_alarm0_P_hysteresis_c' undeclared here (not in a function)
+\end{console}
+\credit{1.5 marks}
+
+\textbf{Why it is a different kind of mistake from a misspelled \code{CONFIG_} macro.} Both are
+typos that the tool cannot know were meant to be something else, but the devicetree one
+\textbf{fails loudly at compile time}, because a missing property macro is an undeclared
+identifier. A misspelled
+\code{CONFIG_} macro inside \code{IS_ENABLED()} is silently \code{0}, and the program builds and
+runs with the feature off. The devicetree's generated macros are named entities; Kconfig's are
+conditional compilation. \worth{1}
+
+\answerpart{c}{2}
+\textbf{What \code{GPIO_ACTIVE_LOW} changes.} Nothing in the C code, which is the point: the flag
+lives in the devicetree, and the GPIO API's \code{_dt} functions apply it. The code says
+\emph{active} and \emph{inactive} --- \code{gpio_pin_get_dt()} returns 1 when the button is pressed,
+\code{GPIO_INT_EDGE_TO_ACTIVE} is the interrupt for a press --- and the driver turns that into the
+electrical level the board actually uses. \worth{1}
+
+\textbf{What \code{gpio_emul_input_set()} needs.} The \textbf{physical} level, not the logical one.
+The emulator sits where the pin is, below the flags, so pressing an active-low button means driving
+the pin to 0 and releasing it means 1. \worth{1}
+
+\answerpart{d}{2}
+\textbf{A portable sample uses an alias}, such as \code{led0} or \code{sw0}. An alias is a name in
+the tree's \code{aliases} node that points at whatever node plays that role on this board, so the
+same source builds for any board that defines it. A node label (\code{&gpio0}) and a node name
+(\code{gpio_emul}) are properties of one particular tree, so code that uses them is tied to that
+board. \worth{1}
+
+\textbf{\code{DT_NODELABEL()}} turns a label into a node identifier, for the cases where you do mean
+one specific node: an overlay's own node, or a peripheral an application is written against.
+\worth{1}
+
+% ==========================================================================================
+\answersection{4}{Threads, scheduling and time}{13}
+
+\answerpart{a}{6}
+\textbf{Why \code{coop_b} does not run when its semaphore is given.} \code{coop_a} has a cooperative
+priority (negative). A cooperative thread cannot be preempted: once it has the CPU it keeps it until
+it gives it up by blocking, sleeping or yielding. Giving a semaphore makes \code{coop_b}
+\emph{ready}, and ready is not running. \code{coop_b} has the higher priority of the two, so it is
+first in the queue, but nothing takes the CPU away from \code{coop_a} to hand it over. \worth{2}
+
+\textbf{Why \code{high} does.} \code{low} is preemptible (priority 5, non-negative). The moment
+\code{k_sem_give()} makes a higher-priority thread ready, the scheduler switches --- inside the
+call, before it returns. The trace shows that directly: \code{high}'s line is printed between
+\code{low}'s ``giving'' line and its ``back again'' line. \credit{1.5 marks}
+
+\textbf{What happened between the third and fourth lines of Act 1.} \code{coop_a} gave up the CPU
+deliberately: it blocked, slept or called \code{k_yield()}. The fourth line says ``because coop\_a
+yielded'', so the answer expected is \code{k_yield()}; credit any of the three if the candidate says
+the switch cannot happen without one of them. \worth{1}
+
+\textbf{Which priorities are which, and what it means for a critical section.} Negative priorities
+are cooperative and non-negative ones are preemptible. A cooperative thread's critical section is
+protected from every other thread by the fact that it runs, but not from interrupts, and it delays
+every higher-priority thread for as long as it runs --- which is why cooperative threads are for
+short work, and why a cooperative thread that blocks gives all of that protection away at the moment
+it blocks. \credit{1.5 marks}
+
+\answerpart{b}{4}
+\textbf{Why the sleep ends at 510 ms.} Timeouts are kept in ticks, and \code{native_sim} has 100
+ticks per second, so 500 ms is 50 ticks. A thread calling \code{k_msleep()} cannot know how much of
+the current tick has already passed, so the kernel adds one tick to be sure the sleep is never
+\emph{shorter} than asked: 51 ticks, 510 ms. A sleep lasts at least the time requested, and up to
+one tick longer. \worth{2}
+
+\textbf{Why the timer fires at exactly 500 ms.} \code{k_timer_start()} compensates: it subtracts
+that extra tick from the duration before handing it to the timeout machinery, precisely so that a
+timer expires when the application said it should rather than one tick late. \worth{1}
+
+\textbf{What a periodic timer does about it.} Nothing accumulates: the period is measured from the
+scheduled expiry, not from when the handler ran, so a periodic timer does not drift --- 100, 200,
+300, even if a handler is late. \worth{1}
+
+\answerpart{c}{3}
+\textbf{What returning from \code{main()} ends.} The \code{main} thread, and nothing else.
+\code{main()} is just the entry point of one thread; the kernel, every other thread and every timer
+keep running. With nothing else to do, the idle thread runs. A microcontroller has nothing to return
+\emph{to}, so there is no notion of the system exiting. \credit{1.5 marks}
+
+\textbf{Making it stop by itself.} Run it with \code{-stop_at=<seconds>}, which stops the program
+after that much simulated time. Credit \code{Ctrl+C} as the interactive answer. \worth{1}
+
+\textbf{What \code{-no-rt} changes.} How fast simulated time advances relative to the host's clock:
+without it the simulator paces itself to real time, with it the run finishes as fast as the host can
+manage. What it does not change is a single thing the program sees --- the uptimes, the order of
+events and the output are identical, because everything the program observes is simulated time.
+\credit{0.5 marks}
+
+% ==========================================================================================
+\answersection{5}{Interrupt context, work queues and simulated time}{12}
+
+\answerpart{a}{5}
+A \code{k_timer} expiry function runs in \textbf{interrupt context}, from the system clock's
+interrupt. Three defects follow from that:
+\begin{enumerate}
+  \item \textbf{\code{k_msleep(5)}.} Sleeping in an ISR is illegal: there is no thread to suspend.
+    With \code{CONFIG_ASSERT=y} the kernel catches it and panics; without assertions it is undefined
+    behaviour in the scheduler. \credit{1.5 marks}
+  \item \textbf{\code{k_mutex_lock(&bus_mutex, K_FOREVER)}.} A mutex has an owner and may block, so
+    it may not be taken from an ISR at all; a timeout other than \code{K_NO_WAIT} is doubly illegal
+    there. \credit{1.5 marks}
+  \item \textbf{The work itself.} \code{read_sensor()} and \code{store()} are bus traffic and
+    storage in interrupt context: everything in the system, including higher-priority threads, waits
+    for them. \code{LOG_INF()} belongs to the same complaint --- cheap under deferred logging, not
+    free, and on \code{native_sim} immediate. \worth{1}
+\end{enumerate}
+
+\textbf{The shape it should have.} The expiry function does one thing: it submits a work item and
+returns.
+
+\begin{ccode}
+static void sample_work_handler(struct k_work *work)
+{
+	struct sample sample;
+
+	k_mutex_lock(&bus_mutex, K_FOREVER);
+	read_sensor(&sample);
+	k_mutex_unlock(&bus_mutex);
+	store(&sample);
+}
+
+K_WORK_DEFINE(sample_work, sample_work_handler);
+
+static void sample_expiry(struct k_timer *timer)
+{
+	k_work_submit(&sample_work);
+}
+\end{ccode}
+
+\noindent The handler runs in a work queue's thread, where sleeping, locking and logging are all
+allowed. \worth{1}
+
+\answerpart{b}{3}
+\textbf{A 200 ms work item.} The work queue is one thread running items one after another, so every
+other item queued on it waits 200 ms. Nothing else on that queue can overtake it, whatever its
+urgency. \worth{1}
+
+\textbf{An item that blocks forever.} The system work queue is dead: no further item on it ever
+runs. Anything in Zephyr that uses the system queue behind your back stops working too. \worth{1}
+
+\textbf{When to start your own queue.} When the work must not be delayed by --- or must not delay
+--- other users of the system queue: work that blocks, work that takes long, or work that needs a
+priority of its own. One condition stated clearly earns the mark. \worth{1}
+
+\answerpart{c}{4}
+\textbf{What \code{native_sim} does.} It hangs, permanently. Code runs in zero simulated time, and
+the simulator advances the clock and delivers interrupts only when every Zephyr thread is waiting. A
+loop that never calls into the kernel never lets that happen, so the interrupt that would set
+\code{ready} can never arrive, and no other thread runs either. \code{-stop_at} cannot end it,
+because the simulated time it is waiting for never arrives. \worth{2}
+
+\textbf{What it costs on real hardware.} It works, and it is still bad: the CPU spins at full power
+until the interrupt arrives, delaying nothing but wasting everything. The interrupt is real there,
+so it does preempt the loop. \worth{1}
+
+\textbf{Two correct rewrites.} Any two of:
+\begin{itemize}
+  \item A semaphore: the ISR calls \code{k_sem_give(&ready_sem)} and \code{main()} calls
+    \code{k_sem_take(&ready_sem, K_FOREVER)}.
+  \item \code{k_poll()} on a \code{k_poll_signal} raised by the ISR, which generalises to waiting
+    for several things.
+  \item As a last resort, keeping the loop but letting the CPU idle inside it, with
+    \code{k_cpu_idle()} or a short \code{k_busy_wait()}; the book calls this the workaround rather
+    than the fix.
+\end{itemize}
+\credit{1 mark for two}
+
+% ==========================================================================================
+\answersection{6}{Synchronization and communication}{13}
+
+\answerpart{a}{6}
+\textbf{The phenomenon is priority inversion}, and the unbounded kind: the highest-priority thread
+in the system waits for a thread that is not even using the lock. \worth{1}
+
+\textbf{579 ms, with the semaphore.} \code{high} asks at 21 ms and gets the lock at 600 ms.
+\code{low} had done 31 ms of its 100 ms of work when \code{medium} woke at 31 ms and preempted it
+--- \code{medium} has the higher priority and needs no lock --- and ran to 531 ms. Only then did
+\code{low} get the CPU back to finish its remaining 69 ms, reaching 600 ms, where it released the
+lock. So \code{high}'s wait is \code{low}'s critical section \emph{plus the whole of medium's
+unrelated work}: $600 - 21 = 579$. \worth{2}
+
+\textbf{79 ms, with the mutex.} \code{high} asks at 21 ms and gets the lock at 100 ms, which is
+exactly the rest of \code{low}'s 100 ms critical section: $100 - 21 = 79$. \code{medium} never gets
+in. \worth{1}
+
+\textbf{What the kernel did to \code{low}.} Priority inheritance. When \code{high} blocked on the
+mutex at 21 ms, the kernel raised the owner's priority to the waiter's, so \code{low} ran at
+priority 5 --- the trace shows it, \code{low (priority 5)} --- and \code{medium} at 6 could no
+longer preempt it. The kernel restored \code{low}'s own priority at the unlock, which is why
+\code{medium} then runs and \code{low} finishes last. \credit{1.5 marks}
+
+\textbf{What the mutex does not fix.} It does not remove the wait: \code{high} still waits for the
+whole of \code{low}'s critical section, and keeping that short is still the designer's job.
+Inheritance bounds the wait by the critical section, it does not eliminate it. Credit equally: it
+does nothing for a semaphore used as a lock, it does not prevent deadlock, and it cannot help a lock
+held across a blocking call. \credit{0.5 marks}
+
+\answerpart{b}{3}
+\textbf{What \code{-ENOMSG} means here.} The queue is full and the call was told not to wait, so
+nothing was queued: the sample is dropped. The producer is being told that the consumer is not
+keeping up. \worth{1}
+
+\textbf{What \code{K_FOREVER} would do.} Block the producer until a slot appears. Nothing is lost,
+and the producer is throttled to the consumer's rate --- which is right for a pipeline and wrong for
+anything that must keep sampling on time. \worth{1}
+
+\textbf{Which an interrupt handler may use.} Only \code{K_NO_WAIT}. An ISR may not block, so the
+only choice in interrupt context is to accept that a full queue means a dropped message --- and,
+ideally, to count the drops. \worth{1}
+
+\answerpart{c}{4}
+\textbf{The subscriber's behaviour.} A subscriber is notified through a queue of channel
+\emph{references}, not of copies: it is told which channel changed, and reads the channel's current
+value when its thread eventually runs. If two messages are published before it runs, both
+notifications are waiting, and both reads return the second message --- so it prints the newer
+reading twice and never sees the one that was overwritten. That is not a bug: for something like a
+display, only the latest value matters. A message subscriber is queued a \emph{copy} of each
+message, so it sees every one exactly once, at the cost of the buffer the copy lives in.
+\credit{2.5 marks}
+
+\textbf{Where a listener runs.} Inside \code{zbus_chan_pub()}, in the \textbf{publisher's} thread,
+with the channel's lock held. It therefore must not block, must not sleep, and must not publish to
+the same channel; it should copy or flag and return. That is also why a listener never misses a
+message: it is called before the publish returns. \credit{1.5 marks}
+
+% ==========================================================================================
+\answersection{7}{Writing a driver}{13}
+
+\answerpart{a}{4}
+\textbf{What \code{device_is_ready()} reports on.} Two things: that the device exists in this build
+and was initialized by the kernel, and that its init function reported success. It is a query of the
+device's initialization state, not a probe of the hardware. \credit{1.5 marks}
+
+\textbf{What the driver most likely did.} Its init function returned a negative errno --- the usual
+cause being the identity check: the driver read the part's \code{WHO_AM_I} register over I2C and got
+something other than the expected value, and returned \code{-ENODEV}. The kernel marks the device
+not ready and carries on booting. \credit{1.5 marks}
+
+\textbf{If the application used it anyway.} It would call into a driver whose state was never set
+up: \code{dev->data} holds whatever init left, the bus may never have been configured, and the reads
+return stale or nonsense values, or fault. The whole point of returning the error at init is that
+the check is the one place to catch it, so a user that skips the check turns a clean ``not ready''
+into a misbehaving system. \worth{1}
+
+\answerpart{b}{5}
+\textbf{1. The devicetree values are hard-coded} (\code{DEVICE_DT_GET(DT_NODELABEL(i2c0))} and
+\code{0x48}) rather than taken from the instance being defined. The second node in the tree gets the
+first one's bus and address, so two instances talk to the same chip, and the driver silently ignores
+what the devicetree says. The corrected shape takes them from the instance:
+
+\begin{ccode}
+.i2c = I2C_DT_SPEC_INST_GET(inst),
+\end{ccode}
+
+\noindent filled in by the instance macro that defines each device. \worth{2}
+
+\textbf{2. The \code{i2c_dt_spec} lives in \code{dev->data}.} It never changes, so it belongs in a
+\code{const} config struct reached through \code{dev->config}, which on a real target lives in
+flash. As written, every instance spends RAM on constants, and nothing stops the driver from
+modifying what the devicetree said:
+
+\begin{ccode}
+struct thermo_config {
+	struct i2c_dt_spec i2c;
+};
+\end{ccode}
+
+\noindent with \code{dev->data} left for the part that does change, such as \code{last_sample}.
+\credit{1.5 marks}
+
+\textbf{3. The identity read's result is discarded and init returns 0 regardless.} \code{(void)} on
+\code{i2c_reg_read_byte_dt()} throws away the bus error, and \code{id} is never compared with
+anything, so a missing, broken or wrong part reports itself ready and the application trusts it.
+Init must check both:
+
+\begin{ccode}
+ret = i2c_reg_read_byte_dt(&config->i2c, THERMO_REG_WHO_AM_I, &id);
+if (ret < 0) {
+	return ret;
+}
+if (id != THERMO_WHO_AM_I) {
+	return -ENODEV;
+}
+\end{ccode}
+\credit{1.5 marks}
+
+Credit also, without extra marks, a candidate who notes that init should check the bus itself with
+\code{i2c_is_ready_dt(&config->i2c)} before using it, that \code{DT_DRV_COMPAT} is only useful with
+the \code{DT_INST_*} macros and \code{DT_INST_FOREACH_STATUS_OKAY()}, and that nothing here would
+define more than one device in the first place.
+
+\answerpart{c}{2}
+\textbf{Where the symbol comes from.} The build generates one \code{DT_HAS_<COMPATIBLE>_ENABLED}
+symbol per compatible that appears on an enabled node in the final devicetree, and Kconfig can
+depend on it because Kconfig runs after devicetree. \worth{1}
+
+\textbf{What it achieves, and what disabling the node does.} The driver's option can only be on when
+the hardware is in the tree, so a build that has no such part cannot accidentally include the
+driver, and one that does gets it by default. With \code{status = "disabled"}, the symbol is not
+generated, the option goes to \code{n}, the driver is not compiled --- and the application's
+\code{DEVICE_DT_GET()} fails at compile time with the \code{__device_dts_ord_N} undeclared error of
+Question~\ref{exa:q:3}. \worth{1}
+
+\answerpart{d}{2}
+\textbf{What the numbers order.} Initialization within the same level: at \code{POST_KERNEL}, every
+device with priority 50 is initialized before every device with priority 90. The pair exists so that
+a device is initialized after whatever it depends on. \worth{1}
+
+\textbf{If the sensor were 40.} The sensor's init would run before the I2C controller's, so its
+identity read would go through a bus that is not yet initialized. It would fail, init would return
+an error, and the device would be not ready for the rest of the run --- a boot-order bug that looks
+exactly like broken hardware. \worth{1}
+
+% ==========================================================================================
+\answersection{8}{Subsystems and debugging}{12}
+
+\answerpart{a}{3}
+\begin{itemize}
+  \item \textbf{\code{-22} is \code{-EINVAL}, returned by the command's own handler.} The handler
+    validated its argument, printed why it was refused, and returned the errno.
+  \item \textbf{\code{-8} is \code{-ENOEXEC}, returned by the shell itself} for a command it does
+    not know.
+  \item \textbf{\code{1} is \code{SHELL_CMD_HELP_PRINTED}}, returned when a command with subcommands
+    is run without one: all it did was print its help.
+\end{itemize}
+\credit{1.5 marks, half each}
+
+\textbf{What the shell does with the value.} It does not print it, but it keeps it, and the built-in
+\code{retval} command prints the previous command's return value. \credit{0.5 marks}
+
+\textbf{Why return a negative errno.} Because the value is what a script, a test, or anything
+driving the shell can act on: a handler that prints an error and returns 0 reports success to
+everything except a human reading the screen. Returning the errno makes the failure machine-readable
+and keeps the shell's own conventions intact. \worth{1}
+
+\answerpart{b}{3}
+\textbf{Where the counter lives.} In the settings subsystem's storage, on the board's flash --- and
+on \code{native_sim} that flash is a file, \file{flash.bin}, in the directory the program runs in.
+\code{west build -t run} runs the program in the build directory, so the file is
+\file{build/flash.bin}. \credit{1.5 marks}
+
+\textbf{Why a pristine build resets it.} \code{west build -p} deletes the build directory and
+everything in it, \file{flash.bin} included. The next run therefore starts with erased flash --- a
+factory-new device --- and the counter starts again at 1. \worth{1}
+
+\textbf{Making every run a first boot without deleting anything.} \code{-flash_in_ram}, which keeps
+the simulated flash in RAM only and leaves the file alone. Credit \code{-flash_erase}, which erases
+at startup, as an answer that also achieves it; credit \code{-flash=<path>} only if the candidate
+explains that it selects a different file. \credit{0.5 marks}
+
+\answerpart{c}{3}
+\textbf{The difference.} Reason 3 is a \textbf{kernel oops}: an error attributed to the thread that
+caused it, raised by \code{k_oops()} or an equivalent. Reason 4 is a \textbf{kernel panic}, which a
+failed \code{__ASSERT()} raises: an error the system as a whole cannot continue from. \worth{1}
+
+\textbf{What the handler must do.} For the oops it may \textbf{return}, and the kernel then aborts
+only the offending thread --- which is what the first trace shows, \code{main()} carrying on
+afterwards. For the panic it must \textbf{not} return; it has to halt or reboot the system, because
+there is no defined state to go back to. \worth{1}
+
+\textbf{The exit status.} On \code{native_sim}, halting means the process exits with \textbf{status
+1}, which is also why a test that ends this way is reported as a failure rather than as output.
+\worth{1}
+
+\answerpart{d}{3}
+\textbf{What the report tells you.} The kind of error (a write past the end of a stack buffer), the
+address, the thread, and the exact source line that did it --- with a frame pointing at
+\code{fill()} in \file{main.c:28}. On a microcontroller the same write would simply have landed on
+whatever variable was next in memory, and the symptom would have appeared somewhere else entirely,
+later, as corrupted data. \credit{1.5 marks}
+
+\textbf{Why it stops.} AddressSanitizer halts the program at the first error rather than letting it
+continue on memory it has proved is wrong; the process exits with status 1. \credit{0.5 marks}
+
+\textbf{Why only on this board.} AddressSanitizer is the host toolchain's: it instruments the
+program and links it against the host's runtime, which exists because a \code{native_sim} image is
+an ordinary Linux program. There is no such runtime in a Cortex-M image, and \code{CONFIG_ASAN}
+depends on the POSIX architecture accordingly. Credit a candidate who adds that
+UndefinedBehaviorSanitizer is not in the same position --- it can trap on a target through
+\code{CONFIG_UBSAN_TRAP} --- and that this is a large part of why it pays to keep code runnable on
+\code{native_sim}. \worth{1}

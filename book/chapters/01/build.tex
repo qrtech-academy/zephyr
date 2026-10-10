@@ -1,0 +1,548 @@
+% Section 1.2, from lectures/L01/appendix/b_zephyr_and_the_build.md.
+
+\section{Zephyr, west and the Build}
+\label{c1:sec:zephyrwestandthebu}\label{c1:app:b}
+This section covers what Zephyr is, the board this book runs on, the workspace it lives in, and the
+build that turns an application into a program. By the end you should be able to explain every file
+in the \file{lectures/L01/examples/hello} and \file{lectures/L01/examples/kconfig} examples, and
+every line of output their builds print that matters.
+
+\subsection{What Zephyr is}
+Zephyr is an open-source real-time operating system for microcontrollers, hosted by the Linux
+Foundation and licensed under Apache 2.0. It runs on ARM Cortex-M and Cortex-A, RISC-V, x86, Xtensa,
+ARC and more, and ships support for well over a thousand boards.
+
+The word \emph{operating system} is meant more literally than in ``FreeRTOS''. FreeRTOS gives you a
+scheduler and a handful of kernel objects, and you bring everything else: the drivers, the logging,
+the build. Zephyr ships all of it:
+
+\begin{booktable}{@{}>{\raggedright\arraybackslash}p{10.5em}L@{}}
+  \thead{Part} & \thead{What it gives you} \\
+  \midrule
+  \textbf{The kernel} & Threads, scheduling, interrupts, timers, and kernel objects for synchronization and communication. Chapters~\ref{c3:ch} and~\ref{c4:ch}. \\
+  \textbf{The device driver model} & One API per kind of device (GPIO, I2C, sensor, flash, …), implemented by drivers for many chips. Chapters~\ref{c2:ch} and~\ref{c5:ch}. \\
+  \textbf{Subsystems} & Logging, a shell, settings storage, file systems, networking, Bluetooth, USB, and more. This chapter and Chapter~\ref{c6:ch}. \\
+  \textbf{The build system} & CMake, Kconfig and devicetree, which select and configure all of the above at compile time. This chapter and Chapter~\ref{c2:ch}. \\
+  \textbf{Test tooling} & The ztest framework and the Twister test runner. Chapter~\ref{c5:ch}. \\
+\end{booktable}
+
+\textbf{Everything is decided at compile time.} A Zephyr image holds only the drivers, subsystems
+and kernel features the application asked for, sized for the board it was built for. There is no
+loading of drivers at run time and nothing to discover: the build has already worked out what
+hardware exists and which code serves it. That is what makes Zephyr fit into a few kilobytes, and it
+is also why most of what is hard about Zephyr is in the build. If you have met Linux’s \code{make
+menuconfig} or its \code{.dts} files, those are the same two ideas, Kconfig and devicetree, used the
+same way.
+
+Zephyr releases roughly three times a year, with a long-term support (LTS) release, maintained with
+fixes for years, every few releases. Projects pin a release and move deliberately; so does this
+book.
+
+\subsection{\code{native_sim}}
+A \emph{board}, in Zephyr, is what an application is built for: a processor, the peripherals around
+it, and how they are wired. \code{native_sim} is a board that does not exist. It is Zephyr’s
+\textbf{POSIX architecture}: the kernel, drivers and application compiled together into an ordinary
+Linux program, which runs on the host CPU.
+
+\begin{shell}
+west build -b native_sim/native/64 lectures/L01/examples/hello
+./build/zephyr/zephyr.exe
+\end{shell}
+
+Nothing is emulated at the instruction level, as QEMU would. Each Zephyr thread is backed by a Linux
+thread, and the kernel lets exactly one of them run at a time, so Zephyr’s scheduler is in charge
+exactly as on a microcontroller. The hardware is what is simulated: a system timer, an interrupt
+controller, and a set of peripherals with emulated backends, among them a GPIO controller, an I2C
+bus, a flash chip and an EEPROM. Chapters~\ref{c2:ch} and~\ref{c5:ch} use those.
+
+\textbf{Time on \code{native_sim} is simulated.} The system timer counts simulated microseconds, and
+the simulator advances that clock only when every Zephyr thread is waiting for something. By default
+a program slows its clock down to real time, so that a one-second sleep takes a second, which is
+what you want when you watch it. Two command-line options change that:
+
+\begin{booktable}{@{}lL@{}}
+  \thead{Option} & \thead{Effect} \\
+  \midrule
+  \code{-no-rt} & Advance simulated time as fast as the host can. Ten simulated minutes take a moment. \\
+  \code{-stop_at=<seconds>} & Stop the program after that much simulated time. \\
+\end{booktable}
+
+\code{./build/zephyr/zephyr.exe --help} lists all of them. Because time is simulated, a program’s
+behaviour does not depend on how busy the host is: it prints the same timestamps on every run, on
+every machine. The exercises rely on that.
+
+\textbf{The same property is \code{native_sim}’s biggest limitation.} Code runs in zero simulated
+time, so no interrupt, not even the timer’s, can arrive while a thread is running; only when it
+waits. A loop such as \code{while (!flag) \{\}}, waiting for an interrupt to set \code{flag}, never
+ends, and because time cannot advance, nothing else runs either. On a microcontroller that loop is
+merely wasteful. Chapter~\ref{c3:ch} shows it on purpose.
+
+A few kernel features are also missing on \code{native_sim}: memory protection between threads
+(userspace), and the stack overflow checks, since each thread really runs on its Linux thread’s
+stack. The Zephyr documentation lists them under \emph{Native simulator: Important limitations}.
+
+\subsection{The west workspace}
+Zephyr is not one repository. The kernel and core live in \code{zephyrproject-rtos/zephyr}, and the
+vendor HALs, cryptography libraries, file systems and other \emph{modules} each live in repositories
+of their own, about eighty in all. \textbf{west} is Zephyr’s tool for managing that: a
+multi-repository manager in the spirit of Git submodules or Google’s \code{repo}, plus a set of
+commands for building, flashing and testing.
+
+\subsubsection{Workspaces and manifests}
+A \textbf{west workspace} is a directory with a \code{.west/config} file in it. The config names a
+\textbf{manifest}, a \code{west.yml} file listing the Git repositories (\emph{projects}) that belong
+to the workspace, where each one goes, and which revision of each one to check out.
+
+The companion repository is its own workspace. \code{make setup} writes a \code{.west/config} that
+points at the repository’s \file{west.yml}:
+
+\begin{yamlcode}
+manifest:
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: v4.4.2
+      path: deps/zephyr
+      clone-depth: 1
+      west-commands: scripts/west-commands.yml
+
+  self:
+    path: .
+\end{yamlcode}
+
+\noindent Line by line:
+
+\begin{itemize}
+  \item \textbf{\code{remotes}} give a name to a base URL. A project’s repository URL is its remote’s
+    \code{url-base} followed by the project’s name: \code{https://github.com/zephyrproject-rtos/zephyr}.
+  \item \textbf{\code{revision: v4.4.2}} pins Zephyr to a release tag. It could as well be a branch or a
+    commit hash, and in a product it should be a tag or a hash, so that the same manifest checks out the
+    same code a year later.
+  \item \textbf{\code{path: deps/zephyr}} is where the project is checked out, relative to the workspace.
+  \item \textbf{\code{clone-depth: 1}} fetches only the pinned commit, not Zephyr’s decade of history, which
+    makes the first \code{west update} much faster, at the cost of \code{git log} showing one commit.
+  \item \textbf{\code{west-commands}} tells west that Zephyr provides extra commands, \code{west build} and
+    \code{west twister} among them. Without that line, west knows only its built-in commands.
+  \item \textbf{\code{self: path: .}} says that the manifest repository is the workspace directory itself.
+\end{itemize}
+
+What the manifest does \textbf{not} do is import Zephyr’s own \code{west.yml}, which lists all of
+Zephyr’s modules. \code{native_sim} needs none of them, and together they are several gigabytes. A
+product built for a real microcontroller would import the few it needs, such as the vendor’s HAL, by
+name.
+
+\subsubsection{The commands}
+West’s own commands manage the workspace:
+
+\begin{shell}
+west update                  # Check out every project at the revision the manifest pins.
+west list                    # Show every project, its path and its revision.
+west manifest --resolve      # Show the whole manifest, with imports expanded.
+west config build.board      # Read a configuration value from .west/config.
+\end{shell}
+
+\noindent \code{west list} in this workspace:
+
+\begin{console}
+manifest     .                            HEAD                                     N/A
+zephyr       deps/zephyr                  v4.4.2                                   https://github.com/zephyrproject-rtos/zephyr
+\end{console}
+
+\noindent \textbf{Moving to another Zephyr release} is two steps: change \code{revision} in
+\code{west.yml}, and run \code{west update}. West never updates a project on its own; \code{git
+pull} in the companion repository changes the manifest, and \code{west update} is what makes the
+workspace match it.
+
+The extension commands that Zephyr adds are the ones used every day: \code{west build}, and, in
+Chapter~\ref{c5:ch}, \code{west twister}. On real hardware there would also be \code{west flash} and
+\code{west debug}.
+
+\subsection{Anatomy of an application}
+A Zephyr application is a directory with at least three files:
+
+\begin{console}
+hello/
+    CMakeLists.txt      How to build it.
+    prj.conf            How to configure Zephyr for it.
+    src/main.c          The code.
+\end{console}
+
+\subsubsection{\code{CMakeLists.txt}}
+\begin{cmakecode}
+cmake_minimum_required(VERSION 3.20.0)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(hello)
+
+target_sources(app PRIVATE src/main.c)
+\end{cmakecode}
+
+\noindent \textbf{\code{find_package(Zephyr)} is where Zephyr’s build system takes over.} It finds
+Zephyr through \code{ZEPHYR_BASE}, which \code{env.sh} sets, and then does most of the work
+described in \emph{The build} below: it reads the board, processes the devicetree, runs Kconfig, and
+sets up the whole of Zephyr as a set of CMake libraries. It also creates a library target named
+\textbf{\code{app}}, which is where the application’s own sources go. \code{project()} must come
+after it, because Zephyr selects the compiler before CMake’s \code{project()} looks for one.
+
+\subsubsection{\code{prj.conf}}
+A list of Kconfig settings, one per line, applied on top of the board’s defaults:
+
+\begin{kconfigcode}
+CONFIG_LOG=y
+\end{kconfigcode}
+
+\noindent The file must exist, even if it is empty. An application without one fails to configure
+with \code{No prj.conf file(s) was found}.
+
+\subsubsection{\code{src/main.c}}
+\code{main()} is called by the kernel after it has initialized itself and every driver, in a thread
+called \code{main}. Returning from it ends that thread, \textbf{not the program}: the kernel keeps
+running, along with every other thread, and if nothing else has work to do, the idle thread runs
+forever. On \code{native_sim} that is why a program whose \code{main()} has returned keeps running
+until \code{Ctrl+C} or \code{-stop_at}.
+
+\subsubsection{Optional files}
+Applications grow more files as they need them. Those you will meet in this book:
+
+\begin{booktable}{@{}LLl@{}}
+  \thead{File} & \thead{What it is} & \thead{Chapter} \\
+  \midrule
+  \code{Kconfig} & Configuration options of the application’s own. & This one \\
+  \code{*.conf} & Extra Kconfig settings, merged when asked for with \code{-DEXTRA_CONF_FILE}. & This one \\
+  \code{app.overlay} & Changes to the board’s devicetree for this application. & Chapter~\ref{c2:ch} \\
+  \code{dts/bindings/} & Devicetree bindings of the application’s own. & Chapter~\ref{c2:ch} \\
+  \code{boards/} & Kconfig settings and overlays that apply to one board only. & Chapter~\ref{c2:ch} \\
+  \code{sample.yaml}, \code{testcase.yaml} & How Twister builds, runs and checks the application. & Chapter~\ref{c5:ch} \\
+\end{booktable}
+
+\subsection{The build}
+
+\subsubsection{\code{west build}}
+\begin{shell}
+west build -b native_sim/native/64 lectures/L01/examples/hello
+\end{shell}
+
+\code{west build} is a wrapper around CMake and Ninja. It configures the application for the board
+given with \code{-b}, into a build directory, \code{build/} unless \code{-d} says otherwise, and
+then builds it. The options you will use most:
+
+\begin{booktable}{@{}lL@{}}
+  \thead{Option} & \thead{Effect} \\
+  \midrule
+  \code{-b <board>} & The board to build for. The repository sets \code{native_sim/native/64} as the workspace default, so it may be left out. \\
+  \code{-d <dir>} & The build directory. Defaults to \code{build}. \\
+  \code{-p} & \emph{Pristine}: delete the build directory first. By default (\code{-p auto}) west does so only when the application directory has changed. \\
+  \code{-t <target>} & Build a particular target, such as \code{run} or \code{menuconfig}. \\
+  \code{-- <args>} & Pass the rest on to CMake, e.g. \code{-- -DEXTRA_CONF_FILE=shout.conf}. \\
+\end{booktable}
+
+A build directory remembers its board and application, so a second build of the same application
+needs no arguments, and \code{west build -t run} from the repository root runs what \code{build/}
+holds.
+
+\subsubsection{What happens when}
+A Zephyr build has two phases, and the first is the one that is different.
+
+\textbf{Configuration}, which CMake runs, happens once per build directory, and again when an input
+changes. In order:
+
+\begin{enumerate}
+  \item \textbf{The board} is found, and with it the processor architecture, the SoC, and the board’s
+    default Kconfig settings and devicetree.
+  \item \textbf{Devicetree.} The board’s devicetree and any overlays are combined into one tree, checked
+    against their bindings, and turned into a C header of macros.
+  \item \textbf{Kconfig.} Every Kconfig option in Zephyr and the application is resolved, from its defaults,
+    the board’s settings, \code{prj.conf} and the rest, into one final configuration. Kconfig runs after
+    devicetree because options may depend on it: once GPIO is enabled at all, the driver for a GPIO
+    controller is enabled by default exactly when the devicetree has an enabled node for it
+    (\code{depends on DT_HAS_ZEPHYR_GPIO_EMUL_ENABLED}, for \code{native_sim}’s).
+  \item \textbf{CMake} generates the build: which of Zephyr’s source files to compile, decided by the
+    Kconfig options, with which flags.
+\end{enumerate}
+
+\textbf{Compilation}, which Ninja runs, then builds the libraries Zephyr is made of and links them
+with the application into one image. On \code{native_sim} that image is a Linux executable.
+
+\bookfigure{build_pipeline}{The build, in the order it happens. Configuration runs once per build
+directory, and again when an input changes; compilation follows it. Kconfig comes after devicetree,
+so that an option can depend on a node.}{c1:fig:build}
+
+The order explains most of Zephyr’s error messages. A Kconfig error aborts configuration before a
+line of C is compiled. A devicetree error aborts it even earlier. And a C file cannot change which
+drivers are built, because by the time it is compiled, that has long been decided.
+
+\subsubsection{The build directory}
+Among the thousands of files in \code{build/}, a few are worth knowing by name:
+
+\begin{booktable}{@{}LL@{}}
+  \thead{File} & \thead{What it holds} \\
+  \midrule
+  \code{build/zephyr/zephyr.exe} & The program, on \code{native_sim}. On a microcontroller the image would be \code{zephyr.elf}, \code{zephyr.bin} and \code{zephyr.hex}; \code{native_sim} writes a \code{zephyr.elf} too. \\
+  \code{build/zephyr/.config} & The final Kconfig configuration: every option and its value. \\
+  \code{build/zephyr/include/generated/zephyr/autoconf.h} & The same configuration as C macros, included into every source file. \\
+  \code{build/zephyr/zephyr.dts} & The final devicetree, overlays applied. Chapter~\ref{c2:ch}. \\
+  \code{build/zephyr/include/generated/zephyr/devicetree_generated.h} & The devicetree as C macros. Chapter~\ref{c2:ch}. \\
+  \code{build/zephyr/zephyr.map} & The linker map: where every symbol went. \\
+  \code{build/compile_commands.json} & Every compiler command line, for editors. \\
+\end{booktable}
+
+\subsubsection{Running}
+On \code{native_sim}, the program is run either by the build or directly:
+
+\begin{shell}
+west build -t run                             # Run build/zephyr/zephyr.exe.
+./build/zephyr/zephyr.exe -stop_at=3 -no-rt   # Run it with options.
+\end{shell}
+
+\subsection{Kconfig}
+Zephyr has thousands of configuration options. Kconfig, the configuration language from the Linux
+kernel, is how they are declared, how their dependencies are enforced, and how an application sets
+them.
+
+\subsubsection{Declaring options}
+An option is a \emph{symbol} with a type, a prompt, a default, and optionally dependencies:
+
+\begin{kconfigcode}
+config LOG
+	bool "Logging"
+	select PRINTK if USERSPACE
+	help
+	  Global switch for the logger, when turned off log calls will not be
+	  compiled in.
+
+if LOG
+
+config LOG_DEFAULT_LEVEL
+	int "Default log level"
+	default 3
+	range 0 4
+
+endif # LOG
+\end{kconfigcode}
+
+\noindent (Both are Zephyr’s own, from \code{subsys/logging/Kconfig} and \code{Kconfig.filtering},
+shortened.)
+
+\begin{booktable}{@{}lL@{}}
+  \thead{Keyword} & \thead{Meaning} \\
+  \midrule
+  \code{bool}, \code{int}, \code{hex}, \code{string} & The type, followed by the prompt shown in menuconfig. A symbol with no prompt cannot be set by the user; only defaults and \code{select} set it. \\
+  \code{default} & The value when nothing sets it. Several \code{default ... if ...} lines may follow each other; the first whose condition holds applies. \\
+  \code{depends on} & The symbol does not exist, and is \code{n}, unless the condition holds. \code{if LOG} … \code{endif} adds \code{depends on LOG} to every symbol between them. \\
+  \code{select} & Forces another bool symbol to \code{y} whenever this one is \code{y}, dependencies or not. \\
+  \code{range} & The allowed values of an \code{int} or \code{hex}. \\
+  \code{menu}, \code{choice} & Group symbols in menuconfig; a \code{choice} allows exactly one of its bool symbols. \\
+\end{booktable}
+
+\subsubsection{Where a value comes from}
+An option’s final value is the last one assigned, from these sources in this order:
+
+\begin{enumerate}
+  \item The \textbf{default} in the option’s declaration.
+  \item The \textbf{board’s defaults}, from the board’s \code{_defconfig} file. For this book’s board, that
+    is \code{deps/zephyr/boards/native/native_sim/native_sim_64_defconfig}.
+  \item \textbf{\code{prj.conf}}, and any board-specific \code{.conf} file in the application’s
+    \code{boards/} directory.
+  \item \textbf{Extra configuration files}, given with \code{-DEXTRA_CONF_FILE=<file>}.
+  \item \textbf{The command line}: \code{-DCONFIG_LOG_DEFAULT_LEVEL=2} after \code{--} on the \code{west
+    build} line.
+\end{enumerate}
+
+Then Kconfig checks the result. Every assignment is only a \emph{request}: an option whose
+dependencies do not hold stays \code{n}, and an \code{int} outside its range falls back on its
+default. \textbf{Zephyr treats that as an error}, because a request that silently did not take is
+how configurations rot. With \code{CONFIG_SHELL_LOG_BACKEND=y} but no shell:
+
+\begin{console}
+warning: SHELL_LOG_BACKEND (defined at subsys/shell/Kconfig:278) was assigned the value 'y' but got
+the value 'n'. Check these unsatisfied dependencies: SHELL (=n). ...
+
+error: Aborting due to Kconfig warnings
+\end{console}
+
+\noindent The message names the dependency that failed. The fix is to enable it too, or to find out
+why it cannot be.
+
+\subsubsection{Reading the result}
+After a build, \code{build/zephyr/.config} holds every symbol’s value, and grep is the fastest way
+to answer \emph{what did the build actually use?}:
+
+\begin{shell}
+grep -E "CONFIG_LOG_MODE|CONFIG_SYS_CLOCK_TICKS_PER_SEC" build/zephyr/.config
+\end{shell}
+
+\begin{kconfigcode}
+CONFIG_SYS_CLOCK_TICKS_PER_SEC=100
+CONFIG_LOG_MODE_IMMEDIATE=y
+\end{kconfigcode}
+
+\noindent For browsing, \code{west build -t menuconfig} opens the same configuration in the
+terminal, and \code{west build -t guiconfig} in a window, if Ubuntu’s \code{python3-tk} package is
+installed. \code{/} searches, and \code{?} on a symbol shows its definition, dependencies and what
+selects it, which is the fastest way to find out \emph{why} an option has the value it has.
+\textbf{Changes made in menuconfig live only in the build directory}: they are lost with the next
+pristine build. Anything that should last belongs in \code{prj.conf}.
+
+\subsubsection{Using options from C}
+Every option that is set becomes a macro in \code{autoconf.h}, which the build includes into every
+source file: \code{CONFIG_LOG_DEFAULT_LEVEL} is \code{3}, \code{CONFIG_BOARD_TARGET} is
+\code{"native_sim/native/64"}, and a bool that is \code{y} is \code{1}. \textbf{A bool that is
+\code{n} is not defined at all.} There are two ways to test one:
+
+\begin{ccode}
+#ifdef CONFIG_APP_SHOUT
+	shout(greeting, loud, sizeof(loud));
+#endif
+
+if (IS_ENABLED(CONFIG_APP_SHOUT)) {
+	shout(greeting, loud, sizeof(loud));
+}
+\end{ccode}
+
+\noindent Prefer \textbf{\code{IS_ENABLED()}}. It expands to \code{1} or \code{0}, so the code
+inside is compiled and type-checked in every configuration and removed by the compiler in the ones
+where it cannot run. Code behind \code{\#ifdef} is not even parsed when the option is off, so it
+breaks unnoticed. Keep \code{\#ifdef} for what cannot compile at all when the option is off, such as
+a reference to a struct member that exists only with the option.
+
+Both forms share one trap. \code{IS_ENABLED(CONFIG_APP_SHOUTT)}, misspelled, compiles without a
+warning and is \code{0}, because an undefined macro is simply an option that is off. Kconfig catches
+a misspelled option in \code{prj.conf}; nothing catches one in C.
+
+\subsubsection{Using options from CMake}
+Kconfig has run by the time \code{find_package(Zephyr)} returns, so every option is a CMake variable
+too, and CMake can decide what to compile:
+
+\begin{cmakecode}
+target_sources_ifdef(CONFIG_APP_SHOUT app PRIVATE src/shout.c)
+\end{cmakecode}
+
+\noindent That is how all of Zephyr is built: nearly every driver and subsystem is a list of
+\code{*_sources_ifdef(CONFIG_...)} lines.
+
+\subsubsection{Options of your own}
+An application with a file named \code{Kconfig} gets options of its own. That file \textbf{replaces}
+Zephyr’s top-level Kconfig file for the build, so it must bring Zephyr’s back in at the end:
+
+\begin{kconfigcode}
+menu "Application"
+
+config APP_REPEAT
+	int "How many times to print the greeting"
+	range 1 10
+	default 3
+
+endmenu
+
+source "Kconfig.zephyr"
+\end{kconfigcode}
+
+\noindent Prefix the options with \code{APP_}, or with the application’s name, so that they cannot
+collide with Zephyr’s. They then behave exactly like Zephyr’s own: they appear in menuconfig, are
+set from \code{prj.conf}, and reach C and CMake as \code{CONFIG_APP_REPEAT}.
+
+\subsection{\code{printk} and logging}
+
+\subsubsection{\code{printk}}
+\code{printk()} prints to the console, with \code{printf()}-style formatting from Zephyr’s own small
+formatter. It writes synchronously, from any context, and is on by default. It is the right tool for
+a quick look, and the wrong one for anything that ships.
+
+\subsubsection{The logging subsystem}
+Logging is enabled with \code{CONFIG_LOG=y}. Each source file belongs to a \textbf{log module},
+registered once, with a name and a level:
+
+\begin{ccode}
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(monitor, LOG_LEVEL_INF);
+
+LOG_ERR("Temperature %d C is critical", celsius);
+LOG_WRN("Temperature %d C is high", celsius);
+LOG_INF("Temperature %d C", celsius);
+LOG_DBG("Raw sample 0x%04x", raw);
+\end{ccode}
+
+\noindent Every message is printed with a timestamp, its level and its module, and in color on a
+terminal:
+
+\begin{console}
+[00:00:01.530,000] <wrn> monitor: Temperature 33 C is high
+\end{console}
+
+\noindent Other files of the same module use \code{LOG_MODULE_DECLARE(monitor, LOG_LEVEL_INF)}
+instead of registering it again. \code{LOG_HEXDUMP_INF(data, length, "label")} prints a buffer.
+
+\subsubsection{Levels}
+The levels are numbered: \code{LOG_LEVEL_NONE} is 0, \code{ERR} 1, \code{WRN} 2, \code{INF} 3 and
+\code{DBG} 4. \textbf{A module’s level is a compile-time filter}: a message above it is not merely
+suppressed, it is not compiled into the image at all, format string included. That is why debug
+messages can be left in the code for free, and why turning them on needs a rebuild.
+
+\code{LOG_MODULE_REGISTER(monitor)}, with no level, uses \code{CONFIG_LOG_DEFAULT_LEVEL}, which is 3
+unless something sets it. Zephyr’s own modules each have a Kconfig option for their level instead,
+such as \code{CONFIG_I2C_LOG_LEVEL}, and an application can give its modules one the same way, with
+a template from Zephyr’s logging Kconfig:
+
+\begin{kconfigcode}
+module = MONITOR
+module-str = monitor
+source "subsys/logging/Kconfig.template.log_config"
+\end{kconfigcode}
+
+\noindent That declares a choice of levels, set in \code{prj.conf} with a line such as
+\code{CONFIG_MONITOR_LOG_LEVEL_DBG=y}, and the resulting number as \code{CONFIG_MONITOR_LOG_LEVEL}.
+The module is registered with \code{LOG_MODULE_REGISTER(monitor, CONFIG_MONITOR_LOG_LEVEL)}.
+
+\subsubsection{Deferred and immediate}
+There are two ways a message can reach the console, and the choice matters on a microcontroller:
+
+\begin{itemize}
+  \item \textbf{Deferred} logging, the default on real hardware, only copies the message’s arguments into a
+    buffer; a low-priority log thread formats and prints it later. Logging from an interrupt handler
+    then costs microseconds, not the milliseconds a UART takes. The price is that a log message and a
+    \code{printk()} right after it may appear in the opposite order, and that messages still in the
+    buffer are lost if the system crashes.
+  \item \textbf{Immediate} logging formats and prints in the caller, like \code{printk()}.
+\end{itemize}
+
+\textbf{\code{native_sim} logs in immediate mode by default} (\code{CONFIG_LOG_MODE_IMMEDIATE}),
+because printing on a host costs nothing that matters and ordered output is easier to read. Keep in
+mind that the same application on a board will be deferred unless told otherwise.
+
+\subsection{Time, briefly}
+Chapter~\ref{c3:ch} covers time properly. Two things are needed before then.
+
+\textbf{Delays are written in milliseconds and kept in ticks.} \code{k_msleep(500)} and
+\code{k_sleep(K_MSEC(500))} are the same call. The kernel converts the duration to \emph{ticks} of
+its system clock, of which \code{native_sim} has \code{CONFIG_SYS_CLOCK_TICKS_PER_SEC=100}, one
+every 10 ms. \code{k_uptime_get()} returns the milliseconds since boot.
+
+\textbf{A sleep lasts at least as long as asked, and usually a little longer.} A thread that calls
+\code{k_msleep(500)} at some moment within a tick cannot know how much of that tick is left, so the
+kernel waits the 50 ticks the duration needs, plus the rest of the current one. That is why the
+\file{lectures/L01/examples/hello} example wakes at 510 ms and 1020 ms, not at 500 and 1000. On
+\code{native_sim} the numbers are the same on every run; on a board they would be the same too,
+which is the point of a tick-based kernel.
+
+\subsection{Summary}
+\begin{itemize}
+  \item Zephyr is a kernel, a driver model, subsystems, and a build that selects and configures all of them
+    at compile time.
+  \item \code{native_sim} builds Zephyr into a Linux program with simulated time: deterministic and fast,
+    but a thread that never waits stops the world.
+  \item A west workspace is a manifest and the repositories it pins. \code{west update} makes the workspace
+    match the manifest.
+  \item An application is \code{CMakeLists.txt}, \code{prj.conf} and sources. \code{find_package(Zephyr)} is
+    where the build takes over.
+  \item The build configures in order: board, devicetree, Kconfig, CMake. Then it compiles.
+  \item A Kconfig value is the last one assigned, from the defaults through \code{prj.conf} to the command
+    line, and an assignment that does not take aborts the build. \code{build/zephyr/.config} shows the
+    result.
+  \item Use \code{IS_ENABLED()} in C, and \code{*_ifdef()} in CMake. A misspelled \code{CONFIG_} macro in C
+    is off, silently.
+  \item Log through log modules. A module’s level decides at compile time which messages exist.
+\end{itemize}
