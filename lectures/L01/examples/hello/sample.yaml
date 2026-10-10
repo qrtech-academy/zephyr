@@ -1,0 +1,21 @@
+sample:
+  name: Hello
+  description: Printing, logging and sleeping on native_sim.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  # Run as fast as the host allows rather than in real time; the output is the same either way.
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l01.hello:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "Hello from native_sim/native/64"
+        - "<inf> hello: Tick 1 at 0 ms"
+        - "<inf> hello: Tick 3 at 1020 ms"
+        - "<wrn> hello: A warning, in yellow"

@@ -1,0 +1,20 @@
+sample:
+  name: Button
+  description: A button added by an overlay, an edge interrupt callback, and an emulated finger.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l02.button:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> button: Button is pin 1 on gpio_emul, LED is pin 0"
+        - "<inf> button: Press 1 \\(thread\\): LED on"
+        - "<inf> button: Press 2 \\(thread\\): LED off"
+        - "<inf> button: Press 3 \\(thread\\): LED on"

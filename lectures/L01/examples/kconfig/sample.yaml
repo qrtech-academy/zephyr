@@ -1,0 +1,27 @@
+sample:
+  name: Kconfig
+  description: An application configured through its own Kconfig options.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+  harness: console
+tests:
+  qacademy.l01.kconfig:
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> kconfig: Hej \\(1 of 3\\)"
+        - "<inf> kconfig: Hej \\(3 of 3\\)"
+  qacademy.l01.kconfig.shout:
+    extra_args:
+      - EXTRA_CONF_FILE=shout.conf
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> kconfig: HEJ \\(1 of 2\\)"
+        - "<inf> kconfig: HEJ \\(2 of 2\\)"

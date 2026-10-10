@@ -1,0 +1,17 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Merged on top of Exercise Set 3's app.overlay by the test suite: the fan alarm is enabled, the
+ * warm alarm is deleted, and the overheat alarm changes.
+ */
+
+/delete-node/ &warm;
+
+&fan {
+	status = "okay";
+};
+
+&overheat {
+	threshold = <60>;
+	hysteresis = <10>;
+};

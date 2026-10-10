@@ -1,0 +1,17 @@
+   0 ms  control (-1)  started
+   0 ms  main    ( 0)  started
+   0 ms  sensor  ( 3)  started
+   0 ms  logger  ( 7)  started
+ 100 ms  logger  ( 7)  awake
+ 200 ms  sensor  ( 3)  awake
+ 200 ms  logger  ( 7)  awake
+ 300 ms  control (-1)  awake
+ 450 ms  control (-1)  work done
+ 450 ms  sensor  ( 3)  awake
+ 450 ms  logger  ( 7)  awake
+ 460 ms  logger  ( 7)  awake
+ 500 ms  logger  ( 7)  awake
+ 600 ms  control (-1)  awake
+ 750 ms  control (-1)  work done
+ 750 ms  sensor  ( 3)  awake
+ 750 ms  logger  ( 7)  awake

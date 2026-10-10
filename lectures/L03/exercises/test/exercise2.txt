@@ -1,0 +1,6 @@
+   0 ms  timer started in main
+ 250 ms  sample 1: expiry in ISR, submitted 1 then 0, handler in sysworkq
+ 500 ms  sample 2: expiry in ISR, submitted 1 then 0, handler in sysworkq
+ 750 ms  sample 3: expiry in ISR, submitted 1 then 0, handler in sysworkq
+1000 ms  sample 4: expiry in ISR, submitted 1 then 0, handler in sysworkq
+1000 ms  timer stopped, stop function in sysworkq

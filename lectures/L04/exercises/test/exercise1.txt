@@ -1,0 +1,17 @@
+[   0 ms] sampled #1, queue 1/3
+[   0 ms]   stored #1, 0 ms old
+[ 101 ms] sampled #2, queue 1/3
+[ 202 ms] sampled #3, queue 2/3
+[ 303 ms] sampled #4, queue 3/3
+[ 351 ms]   stored #2, 250 ms old
+[ 404 ms] sampled #5, queue 3/3
+[ 505 ms] queue full, dropped #3
+[ 505 ms] sampled #6, queue 3/3
+[ 606 ms] queue full, dropped #4
+[ 606 ms] sampled #7, queue 3/3
+[ 702 ms]   stored #5, 298 ms old
+[ 707 ms] sampled #8, queue 3/3
+[ 808 ms] sampler done
+[1053 ms]   stored #6, 548 ms old
+[1404 ms]   stored #7, 798 ms old
+[1755 ms]   stored #8, 1048 ms old

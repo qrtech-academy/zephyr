@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+#
+# Vendor prefixes this application's bindings use, in the format of Zephyr's own
+# dts/bindings/vendor-prefixes.txt: <vendor-prefix><TAB><full name of vendor>. Without it, the
+# build warns that qacademy is an unknown vendor, and Twister, which treats devicetree warnings as
+# errors, fails.
+
+qacademy	QRTECH Academy

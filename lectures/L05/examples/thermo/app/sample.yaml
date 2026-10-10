@@ -1,0 +1,22 @@
+sample:
+  name: Thermo application
+  description: Reading an emulated I2C temperature sensor through the generic sensor API.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l05.thermo.app:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> i2c_emul_ctlr: Register emulator 'thermo@48' at I2C addr 48"
+        - "<inf> thermo_app: Reading thermo@48"
+        - "<inf> thermo_app: Temperature: 21.5000 C"
+        - "<inf> thermo_app: Temperature: 21.4375 C"
+        - "<inf> thermo_app: Temperature: -0.5000 C"
+        - "<inf> thermo_app: Temperature: -18.0625 C"

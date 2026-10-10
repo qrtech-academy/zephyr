@@ -1,0 +1,24 @@
+sample:
+  name: zbus
+  description: One zbus channel with a validator, a listener, a subscriber and a message subscriber.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l04.zbus:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "sensor publishes #2 = 30500 mC"
+        - "alarm   saw #2 = 30500 mC, in thread 'sensor_thread': TOO HOT"
+        - "sensor publishes #3 = 31000 mC"
+        - "logger  saw #2 = 30500 mC, in thread 'logger_thread'"
+        - "logger  saw #3 = 31000 mC, in thread 'logger_thread'"
+        - "display saw #3 = 31000 mC, in thread 'display_thread'"
+        - "display saw #3 = 31000 mC, in thread 'display_thread'"
+        - "returned -ENOMSG, the validator rejected it"

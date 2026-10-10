@@ -1,0 +1,39 @@
+# L02 test suite: one entry per exercise set. What each key means is in ci/suite.py, which does
+# the building and running; see README.md for what is tested.
+
+# Exercise Set 1: the board's LED, blinked as the devicetree says. The second build merges an
+# overlay that moves led0 to an active-low LED and changes the blink timing.
+exercise1:
+  needs: [exercise1/CMakeLists.txt, exercise1/prj.conf, exercise1/app.overlay,
+          exercise1/src/main.c]
+  programs:
+    - stop_at: 2
+      expected: exercise1.txt
+    - cmake: ["-DEXTRA_DTC_OVERLAY_FILE={test}/exercise1-extra.overlay"]
+      stop_at: 2
+      expected: exercise1-extra.txt
+
+# Exercise Set 2: a button and a second LED added by an overlay, and an edge callback. The second
+# build moves both, and turns the polarity of each around.
+exercise2:
+  needs: [exercise2/CMakeLists.txt, exercise2/prj.conf, exercise2/app.overlay,
+          exercise2/src/main.c]
+  programs:
+    - stop_at: 2
+      expected: exercise2.txt
+    - cmake: ["-DEXTRA_DTC_OVERLAY_FILE={test}/exercise2-extra.overlay"]
+      stop_at: 2
+      expected: exercise2-extra.txt
+
+# Exercise Set 3: a binding of your own, and a table of alarms built from the devicetree. The second
+# build enables one alarm, deletes another, and changes the third.
+exercise3:
+  needs: [exercise3/CMakeLists.txt, exercise3/prj.conf, exercise3/app.overlay,
+          "exercise3/dts/bindings/qacademy,alarm.yaml", exercise3/dts/bindings/vendor-prefixes.txt,
+          exercise3/src/main.c]
+  programs:
+    - stop_at: 1
+      expected: exercise3.txt
+    - cmake: ["-DEXTRA_DTC_OVERLAY_FILE={test}/exercise3-extra.overlay"]
+      stop_at: 1
+      expected: exercise3-extra.txt

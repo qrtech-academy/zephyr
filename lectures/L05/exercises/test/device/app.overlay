@@ -1,0 +1,19 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * One part that the kernel initializes at boot, and one whose initialization a test defers until
+ * it has made the part report the wrong PART_ID.
+ */
+
+&i2c0 {
+	light: lumo@29 {
+		compatible = "qacademy,lumo";
+		reg = <0x29>;
+	};
+
+	light_broken: lumo@2a {
+		compatible = "qacademy,lumo";
+		reg = <0x2a>;
+		zephyr,deferred-init;
+	};
+};

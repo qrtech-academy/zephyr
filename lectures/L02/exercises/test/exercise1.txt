@@ -1,0 +1,8 @@
+LED: pin 0 on gpio_emul, active high
+LED on, pin high at 0 ms
+LED off, pin low at 210 ms
+LED on, pin high at 520 ms
+LED off, pin low at 730 ms
+LED on, pin high at 1040 ms
+LED off, pin low at 1250 ms
+Done after 3 blinks

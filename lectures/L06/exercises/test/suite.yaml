@@ -1,0 +1,54 @@
+# L06 test suite: one entry per exercise set. What each key means is in ci/suite.py, which does
+# the building and running; see README.md for what is tested.
+
+# Exercise Set 1: the setpoint command, typed into the shell on stdin.
+exercise1:
+  needs: [exercise1/CMakeLists.txt, exercise1/prj.conf, exercise1/src/main.c]
+  programs:
+    - stop_at: 1
+      stdin: exercise1.in
+      expected: exercise1.txt
+      match: contains
+
+# Exercise Set 2: the stored setpoint, across five runs that share one simulated flash.
+exercise2:
+  needs: [exercise2/CMakeLists.txt, exercise2/prj.conf, exercise2/src/main.c]
+  programs:
+    - runs:
+        - {stop_at: 1, stdin: exercise2-set.in, expected: exercise2-set.txt, match: contains}
+        - {stop_at: 1, stdin: exercise2-get.in, expected: exercise2-get.txt, match: contains}
+        - {stop_at: 1, args: [-flash_in_ram], expected: exercise2-in-ram.txt, match: contains}
+        - {stop_at: 1, stdin: exercise2-reset.in, expected: exercise2-reset.txt, match: contains}
+        - {stop_at: 1, expected: exercise2-after-reset.txt, match: contains}
+
+# Exercise Set 3: an oops the handler survives, and, with assertions on, a panic it does not.
+exercise3:
+  needs: [exercise3/CMakeLists.txt, exercise3/prj.conf, exercise3/src/main.c,
+          exercise3/src/fatal.c]
+  programs:
+    - stop_at: 1
+      expected: exercise3.txt
+      match: contains
+    - cmake: [-DCONFIG_ASSERT=y]
+      stop_at: 1
+      status: 1
+      expected: exercise3-assert.txt
+      match: contains
+
+# Exercise Set 4: the fixed battery monitor, with and without AddressSanitizer and UBSan.
+exercise4:
+  needs: [exercise4/CMakeLists.txt, exercise4/prj.conf, exercise4/src/main.c]
+  programs:
+    - stop_at: 1
+      expected: exercise4.txt
+    - cmake: [-DCONFIG_ASAN=y, -DCONFIG_UBSAN=y]
+      stop_at: 1
+      expected: exercise4.txt
+
+# Exercise Set 5: the UDP client and server, talking through the host's loopback interface.
+exercise5:
+  needs: [exercise5/CMakeLists.txt, exercise5/prj.conf, exercise5/src/main.c]
+  programs:
+    - stop_at: 3
+      expected: exercise5.txt
+      match: contains

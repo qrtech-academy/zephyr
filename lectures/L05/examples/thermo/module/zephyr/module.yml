@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT
+#
+# This file is what makes the directory a Zephyr module. The build finds it through
+# ZEPHYR_EXTRA_MODULES (or, in a west workspace, through the manifest), then includes the module's
+# CMakeLists.txt and Kconfig, and adds dts/ to the places it looks for devicetree bindings.
+name: qacademy-thermo
+build:
+  cmake: .
+  kconfig: Kconfig
+  settings:
+    dts_root: .

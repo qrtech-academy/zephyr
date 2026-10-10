@@ -1,0 +1,48 @@
+sample:
+  name: Debugging
+  description: Correct code and five ways to call it wrongly, caught by sanitizers and the kernel.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l06.debugging:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> app: Filled 8 bytes"
+        - "<inf> app: 5 mV is 5000000 nV"
+        - "<inf> app: The configuration is valid"
+        - "<inf> app: Battery at 42 %"
+        - "<inf> app: main\\(\\) is still running, and returns"
+  # An oops aborts one thread, and the program carries on and exits normally, so it can be checked.
+  qacademy.l06.debugging.oops:
+    extra_args:
+      - EXTRA_CONF_FILE=oops.conf
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "ZEPHYR FATAL ERROR 3: Kernel oops on CPU 0"
+        - "<err> fatal: Caught fatal error 3 in thread 'checker'"
+        - "<inf> app: main\\(\\) is still running, and returns"
+  # The others are only built. AddressSanitizer and a failed assertion end the program with exit
+  # status 1, which Twister counts as a failure whatever was printed, and UndefinedBehaviorSanitizer
+  # reports on stderr, which Twister's console harness does not read.
+  qacademy.l06.debugging.asan:
+    build_only: true
+    extra_args:
+      - EXTRA_CONF_FILE=asan.conf
+  qacademy.l06.debugging.ubsan:
+    build_only: true
+    extra_args:
+      - EXTRA_CONF_FILE=ubsan.conf
+  qacademy.l06.debugging.assert:
+    build_only: true
+    extra_args:
+      - EXTRA_CONF_FILE=assert.conf

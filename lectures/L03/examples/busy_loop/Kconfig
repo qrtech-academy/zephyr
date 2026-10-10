@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT
+
+menu "Application"
+
+config APP_BUSY_LOOP
+	bool "Wait for the timer in a busy loop"
+	help
+	  Makes main() wait for the timer by spinning on a flag, instead of blocking on a semaphore.
+	  On a microcontroller that works, wastefully. On native_sim it never finishes, because
+	  no simulated time passes while a thread runs, so the timer never expires.
+
+endmenu
+
+source "Kconfig.zephyr"

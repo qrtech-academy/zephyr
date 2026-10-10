@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: MIT
+#
+# The Lumo emulator, as a Zephyr module of its own. It is the course's part of the exercises: your
+# module holds the binding and the driver, and this one plays the chip. The test suite adds it to
+# every build with -DZEPHYR_EXTRA_MODULES, so your application never has to know it exists.
+name: qacademy-lumo-emul
+build:
+  cmake: .
+  kconfig: Kconfig

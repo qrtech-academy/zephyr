@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MIT
+#
+# Vendor prefixes this module adds to Zephyr's list. Every compatible starts with one, and the
+# devicetree tooling warns about a prefix it does not know: a warning in a plain build, and an
+# error under Twister, which builds with --edtlib-Werror.
+
+qacademy	QRTECH Academy

@@ -1,0 +1,42 @@
+# L05 test suite: one entry per exercise set. What each key means is in ci/suite.py, which does
+# the building and running; see README.md for what is tested.
+
+# Exercise Set 1: the module, the binding, Kconfig, and a driver whose init checks the part.
+exercise1:
+  needs: [exercise1/zephyr/module.yml, exercise1/CMakeLists.txt, exercise1/Kconfig,
+          "exercise1/dts/bindings/qacademy,lumo.yaml", exercise1/dts/bindings/vendor-prefixes.txt,
+          exercise1/src/lumo_reg.h, exercise1/src/lumo.c]
+  ztest: device
+
+# Exercise Set 2: the sensor API, and counts converted to lux.
+exercise2:
+  needs: [exercise2/zephyr/module.yml, exercise2/CMakeLists.txt, exercise2/Kconfig,
+          "exercise2/dts/bindings/qacademy,lumo.yaml", exercise2/dts/bindings/vendor-prefixes.txt,
+          exercise2/src/lumo_reg.h, exercise2/src/lumo.c]
+  ztest: [device, conversion]
+
+# Exercise Set 3: the gain, from the devicetree to the part and into the conversion.
+exercise3:
+  needs: [exercise3/zephyr/module.yml, exercise3/CMakeLists.txt, exercise3/Kconfig,
+          "exercise3/dts/bindings/qacademy,lumo.yaml", exercise3/dts/bindings/vendor-prefixes.txt,
+          exercise3/src/lumo_reg.h, exercise3/src/lumo.c]
+  ztest: [device, conversion, gain]
+
+# Exercise Set 4: an application reading the part once a second, during the emulator's sunrise.
+exercise4:
+  needs: [exercise4/CMakeLists.txt, exercise4/prj.conf, exercise4/app.overlay,
+          exercise4/src/main.c, exercise3/src/lumo.c]
+  programs:
+    - cmake: ["-DZEPHYR_EXTRA_MODULES={test}/lumo_emul", -DCONFIG_EMUL_LUMO_DAYLIGHT=y]
+      stop_at: 6.5
+      expected: exercise4.txt
+      match: contains
+
+# Exercise Set 5: your own ztest suite for the driver, which must run and pass.
+exercise5:
+  needs: [exercise5/CMakeLists.txt, exercise5/prj.conf, exercise5/app.overlay,
+          exercise5/testcase.yaml, exercise5/src/main.c, exercise3/src/lumo.c]
+  programs:
+    - cmake: ["-DZEPHYR_EXTRA_MODULES={test}/lumo_emul"]
+      expected: exercise5.txt
+      match: contains

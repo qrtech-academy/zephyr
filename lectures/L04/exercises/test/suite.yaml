@@ -1,0 +1,36 @@
+# L04 test suite: one entry per exercise set. What each key means is in ci/suite.py, which does
+# the building and running; see README.md for what is tested.
+
+# Exercise Set 1: the sampler, the storage thread, and the queue that keeps the newest readings.
+exercise1:
+  needs: [exercise1/CMakeLists.txt, exercise1/prj.conf, exercise1/src/main.c]
+  programs:
+    - stop_at: 3
+      expected: exercise1.txt
+
+# Exercise Set 2: priority inversion, with a semaphore and, built with mutex.conf, a mutex.
+exercise2:
+  needs: [exercise2/Kconfig, exercise2/CMakeLists.txt, exercise2/prj.conf, exercise2/mutex.conf,
+          exercise2/src/main.c]
+  programs:
+    - stop_at: 1
+      expected: exercise2.txt
+    - cmake: [-DEXTRA_CONF_FILE=mutex.conf]
+      stop_at: 1
+      expected: exercise2-mutex.txt
+
+# Exercise Set 3: the battery gauge on a zbus channel, its listener and its subscriber.
+exercise3:
+  needs: [exercise3/CMakeLists.txt, exercise3/prj.conf, exercise3/src/main.c]
+  programs:
+    - stop_at: 1
+      expected: exercise3.txt
+
+# Exercise Set 4: the garage door's state machine, driven by the program and by the tests.
+exercise4:
+  needs: [exercise4/CMakeLists.txt, exercise4/prj.conf, exercise4/src/door.h,
+          exercise4/src/door.c, exercise4/src/main.c]
+  programs:
+    - stop_at: 1
+      expected: exercise4.txt
+  ztest: door

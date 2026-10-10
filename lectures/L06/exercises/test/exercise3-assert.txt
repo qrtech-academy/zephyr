@@ -1,0 +1,5 @@
+<inf> app: main() carries on
+duty cycle 150 % is out of range
+>>> ZEPHYR FATAL ERROR 4: Kernel panic
+<err> fatal: Fatal error 4 in thread 'main'
+<err> fatal: Halting the system

@@ -1,0 +1,22 @@
+sample:
+  name: Bindings
+  description: A custom devicetree binding, and a table of its nodes built at compile time.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l02.bindings:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> bindings: 2 pattern\\(s\\) enabled"
+        - "<inf> bindings: strobe exists: yes, enabled: no"
+        - "<inf> bindings: pattern-sos: \"SOS\" on gpio_emul pin 0, 18 steps, 3400 ms, x1"
+        - "<inf> bindings: pattern-heartbeat: \"Heartbeat\" on gpio_emul pin 2, 4 steps, 1000 ms, x2"
+        - "<inf> bindings: Played SOS, uptime 3580 ms"
+        - "<inf> bindings: Played Heartbeat, uptime 5660 ms"

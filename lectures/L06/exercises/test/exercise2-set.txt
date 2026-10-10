@@ -1,0 +1,2 @@
+Loaded setpoint: 21 C
+Setpoint set to 25 C

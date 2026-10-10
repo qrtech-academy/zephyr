@@ -1,0 +1,27 @@
+sample:
+  name: Threads
+  description: Cooperative threads, preemption and k_yield(), printed as a trace.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l03.threads:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "coop_a +\\( *-1\\)  gave coop_b's semaphore"
+        - "coop_b +\\( *-2\\)  running, because coop_a yielded"
+        - "coop_a +\\( *-1\\)  back again, after coop_b returned"
+        - "low +\\( *5\\)  giving high's semaphore"
+        - "high +\\( *2\\)  running, in the middle of low's k_sem_give\\(\\)"
+        - "low +\\( *5\\)  back again: high preempted me"
+        - "low +\\( *5\\)  gave peer's semaphore"
+        - "peer +\\( *5\\)  running, because low yielded"
+        - "low +\\( *5\\)  back again, after peer returned"
+        - "low +\\( *5\\)  yield returned at once"
+        - "main +\\( *10\\)  done"

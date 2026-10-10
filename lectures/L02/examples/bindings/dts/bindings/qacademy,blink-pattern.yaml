@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT
+#
+# A binding is the schema for every node with a given compatible. It says which properties such a
+# node may have, their types, which are required and what the defaults are. The build checks each
+# node against it, and generates C macros only for the properties it declares. The file name does
+# not matter to the build, but by convention it is the compatible.
+
+description: |
+  A blink pattern for an LED: a list of on and off times, played a number of times.
+
+  Example:
+
+    heartbeat {
+        compatible = "qacademy,blink-pattern";
+        pattern-name = "Heartbeat";
+        led-gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+        delays-ms = <80 120 80 720>;
+        repeat = <2>;
+    };
+
+compatible: "qacademy,blink-pattern"
+
+# Inherit the properties every node may have, such as status.
+include: base.yaml
+
+properties:
+  pattern-name:
+    type: string
+    required: true
+    description: Human-readable name of the pattern.
+
+  led-gpios:
+    type: phandle-array
+    required: true
+    description: The LED to blink.
+
+  delays-ms:
+    type: array
+    required: true
+    description: |
+      Durations in milliseconds, alternating between on and off, starting with on.
+
+  repeat:
+    type: int
+    default: 1
+    description: How many times to play the pattern.

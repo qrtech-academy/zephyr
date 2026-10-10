@@ -1,0 +1,7 @@
+[   0 ms] logger  (priority 9) takes the lock
+[  11 ms] control (priority 5) needs the lock
+[  60 ms] logger  (priority 5) gives the lock back
+[  60 ms] control (priority 5) has the lock
+control waited 49 ms
+[  60 ms] network (priority 7) starts sending
+[ 360 ms] network (priority 7) is done

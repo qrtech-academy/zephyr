@@ -1,0 +1,22 @@
+sample:
+  name: Timer and work queues
+  description: A periodic timer whose expiry function defers its work to work queues.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l03.timer_work:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - " 100 ms  \\(ISR\\)     timer expired: submitting sample_work"
+        - " 100 ms  sysworkq  sampling"
+        - " 100 ms  store_q   storing, which sleeps for 30 ms"
+        - " 140 ms  store_q   stored"
+        - " 300 ms  sysworkq  last sample: timer stopped"
+        - " 560 ms  sysworkq  idle timeout: no sample for 250 ms"

@@ -1,0 +1,6 @@
+3300 mV, average 3300 mV, 1485000000 uW
+3310 mV, average 3305 mV, 1489500000 uW
+3290 mV, average 3300 mV, 1480500000 uW
+3300 mV, average 3300 mV, 1485000000 uW
+5000 mV, average 3725 mV, 2250000000 uW
+5020 mV, average 4152 mV, 2259000000 uW

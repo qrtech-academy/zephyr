@@ -1,0 +1,3 @@
+ 132 ms  pressed, after 5 edges
+ 441 ms  released, after 8 edges
+1028 ms  finger done, 10 edges

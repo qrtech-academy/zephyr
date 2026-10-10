@@ -1,0 +1,13 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * A deliberately broken overlay, for the live demo: it disables the GPIO controller that led0 is
+ * wired to. The C code does not change, and still asks for that controller's device.
+ *
+ *   west build -p -b native_sim/native/64 lectures/L02/examples/blinky -- \
+ *       -DEXTRA_DTC_OVERLAY_FILE=broken.overlay
+ */
+
+&gpio0 {
+	status = "disabled";
+};

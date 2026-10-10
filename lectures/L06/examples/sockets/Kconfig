@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+
+menu "Application"
+
+config APP_PORT
+	int "TCP port the echo server listens on"
+	range 1024 65535
+	default 4242
+
+config APP_SELF_TEST
+	bool "Connect to the server from a second thread and check the echo"
+	help
+	  Starts a client thread in the same program, which connects to the server through the host's
+	  loopback interface, sends a message, and checks that the same bytes come back. This is how
+	  the example is tested without anything outside the program.
+
+endmenu
+
+source "Kconfig.zephyr"

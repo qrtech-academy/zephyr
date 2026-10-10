@@ -1,0 +1,22 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * native_sim has an LED but no button, so this overlay adds one: pin 1 of the emulated GPIO
+ * controller, active low with a pull-up, the way most buttons are wired. The overlay is merged on
+ * top of the board's devicetree before anything is generated from it.
+ */
+
+/ {
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpio0 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "User button";
+		};
+	};
+
+	aliases {
+		sw0 = &button0;
+	};
+};

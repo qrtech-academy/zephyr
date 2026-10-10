@@ -1,0 +1,2 @@
+[00:00:01.530,000] <wrn> monitor: Temperature 33 C is high
+[00:00:02.040,000] <err> monitor: Temperature 36 C is critical

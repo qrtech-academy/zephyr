@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MIT
+
+description: |
+  Thermo, a made-up I2C temperature sensor with a 12-bit reading in steps of 1/16 degree Celsius.
+
+  The binding is the contract between the devicetree and the driver: a node with this compatible
+  must sit on an I2C bus (that is what i2c-device.yaml requires, including its reg property, the
+  bus address), and may set the properties below.
+
+    &i2c0 {
+            thermo: thermo@48 {
+                    compatible = "qacademy,thermo";
+                    reg = <0x48>;
+            };
+    };
+
+compatible: "qacademy,thermo"
+
+include: [sensor-device.yaml, i2c-device.yaml]
+
+properties:
+  conversion-timeout-ms:
+    type: int
+    default: 100
+    description: |
+      How long the driver waits for a one-shot conversion to finish before it gives up with
+      -ETIMEDOUT. The part converts in about 30 ms.

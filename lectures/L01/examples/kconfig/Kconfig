@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT
+#
+# The application's own configuration options. An application that has a file named Kconfig
+# replaces Zephyr's top-level Kconfig with it, so it must source Kconfig.zephyr at the end, or it
+# would have no kernel options at all. The options below then appear in menuconfig and in .config
+# exactly like Zephyr's own, and reach C as CONFIG_ macros and CMake as CONFIG_ variables.
+
+menu "Application"
+
+config APP_GREETING
+	string "Greeting to print"
+	default "Hello"
+
+config APP_REPEAT
+	int "How many times to print the greeting"
+	range 1 10
+	default 3
+
+config APP_PERIOD_MS
+	int "Delay between greetings, in milliseconds"
+	range 10 10000
+	default 1000
+
+config APP_SHOUT
+	bool "Print the greeting in capitals"
+	help
+	  Builds src/shout.c into the application and passes the greeting through it.
+
+endmenu
+
+source "Kconfig.zephyr"

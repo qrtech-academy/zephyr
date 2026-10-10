@@ -1,0 +1,4 @@
+ 40 ms  channel 0: 1000
+ 80 ms  channel 1: 1111
+120 ms  channel 2: 1222
+120 ms  all channels converted

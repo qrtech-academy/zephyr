@@ -1,0 +1,12 @@
+2 alarms
+Overheat: critical at 60 C, hysteresis 10, LED pin 10
+Fan: info at 25 C, hysteresis 2, LED pin 12
+Reading 20 C
+Reading 50 C
+  Fan (info) on, pin 12 high
+Reading 42 C
+Reading 75 C
+  Overheat (critical) on, pin 10 high
+Reading 66 C
+Reading 30 C
+  Overheat (critical) off, pin 10 low

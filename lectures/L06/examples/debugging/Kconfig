@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: MIT
+
+menu "Application"
+
+choice APP_BUG
+	prompt "Bug to run into"
+	default APP_BUG_NONE
+	help
+	  Every bug is a single wrong value passed to otherwise correct code, so the program with
+	  and without it differs in one place only.
+
+config APP_BUG_NONE
+	bool "None: run the correct code only"
+
+config APP_BUG_STACK_OVERFLOW
+	bool "Write one byte past the end of an array on the stack (for CONFIG_ASAN)"
+
+config APP_BUG_USE_AFTER_FREE
+	bool "Read heap memory after freeing it (for CONFIG_ASAN)"
+
+config APP_BUG_SIGNED_OVERFLOW
+	bool "Overflow a signed integer (for CONFIG_UBSAN)"
+
+config APP_BUG_OOPS
+	bool "Call k_oops() in a thread (for the fatal error handler)"
+
+config APP_BUG_ASSERT
+	bool "Break an __ASSERT() (for CONFIG_ASSERT)"
+
+endchoice
+
+endmenu
+
+source "Kconfig.zephyr"

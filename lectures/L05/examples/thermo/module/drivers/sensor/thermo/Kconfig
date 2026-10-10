@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+
+config THERMO
+	bool "Thermo I2C temperature sensor"
+	default y
+	depends on SENSOR
+	depends on DT_HAS_QACADEMY_THERMO_ENABLED
+	select I2C
+	help
+	  Driver for the Thermo I2C temperature sensor. It is on by default,
+	  but only when the devicetree has a node with compatible
+	  "qacademy,thermo" whose status is okay: DT_HAS_QACADEMY_THERMO_ENABLED
+	  is generated from the devicetree. This is the pattern every driver in
+	  Zephyr follows, and why enabling a driver usually means adding a
+	  devicetree node rather than setting an option.
+
+config EMUL_THERMO
+	bool "Emulator for the Thermo I2C temperature sensor"
+	default y
+	depends on THERMO
+	depends on EMUL
+	help
+	  An emulator that plays the part of the chip on an emulated I2C bus,
+	  such as native_sim's i2c0. Enabled whenever emulators are (CONFIG_EMUL).

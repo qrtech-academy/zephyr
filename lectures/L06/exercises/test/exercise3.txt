@@ -1,0 +1,8 @@
+<inf> app: Sample 21 C
+<inf> app: Sample 22 C
+<err> app: Impossible reading: -300 C
+>>> ZEPHYR FATAL ERROR 3: Kernel oops
+<err> fatal: Fatal error 3 in thread 'sampler'
+<err> fatal: Aborting the thread
+<inf> app: main() carries on
+<inf> app: Heater duty cycle 150 %

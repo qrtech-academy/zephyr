@@ -1,0 +1,35 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Three blink patterns, described as data rather than code. The C program has no idea how many
+ * there are or what they contain: it builds its table from whatever nodes are enabled here.
+ */
+
+/ {
+	sos: pattern-sos {
+		compatible = "qacademy,blink-pattern";
+		pattern-name = "SOS";
+		led-gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+		delays-ms = <100 100 100 100 100 300
+			     300 100 300 100 300 300
+			     100 100 100 100 100 700>;
+	};
+
+	heartbeat: pattern-heartbeat {
+		compatible = "qacademy,blink-pattern";
+		pattern-name = "Heartbeat";
+		led-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
+		delays-ms = <80 120 80 720>;
+		repeat = <2>;
+	};
+
+	/* Disabled nodes stay in the devicetree, but the DT_FOREACH_STATUS_OKAY() loops skip them. */
+	strobe: pattern-strobe {
+		compatible = "qacademy,blink-pattern";
+		status = "disabled";
+		pattern-name = "Strobe";
+		led-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+		delays-ms = <20 20>;
+		repeat = <50>;
+	};
+};

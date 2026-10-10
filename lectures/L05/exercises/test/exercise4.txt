@@ -1,0 +1,8 @@
+[00:00:00.000,000] <inf> light_app: Reading lumo@29
+[00:00:00.000,000] <inf> light_app: 0.00 lux
+[00:00:01.010,000] <inf> light_app: 0.25 lux
+[00:00:02.020,000] <inf> light_app: 42.00 lux
+[00:00:03.030,000] <inf> light_app: 320.00 lux
+[00:00:04.040,000] <inf> light_app: 2750.00 lux
+[00:00:05.050,000] <inf> light_app: 12000.00 lux
+[00:00:06.060,000] <inf> light_app: 16383.75 lux

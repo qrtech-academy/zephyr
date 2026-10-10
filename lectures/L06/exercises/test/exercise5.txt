@@ -1,0 +1,4 @@
+Sent 'hello', received 'HELLO'
+Sent 'zephyr', received 'ZEPHYR'
+Sent 'native_sim', received 'NATIVE_SIM'
+Done

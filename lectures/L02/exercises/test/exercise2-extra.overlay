@@ -1,0 +1,14 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Merged on top of Exercise Set 2's app.overlay by the test suite: the button moves to pin 7 and
+ * becomes active high with a pull-down, and LED 1 moves to pin 3 and becomes active low.
+ */
+
+&button0 {
+	gpios = <&gpio0 7 (GPIO_PULL_DOWN | GPIO_ACTIVE_HIGH)>;
+};
+
+&led1 {
+	gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
+};

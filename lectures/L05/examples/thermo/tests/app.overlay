@@ -1,0 +1,24 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Two emulated parts on native_sim's I2C bus: one the tests read, and one whose initialization is
+ * deferred until a test has made it faulty.
+ */
+
+&i2c0 {
+	thermo: thermo@48 {
+		compatible = "qacademy,thermo";
+		reg = <0x48>;
+		conversion-timeout-ms = <50>;
+	};
+
+	/*
+	 * zephyr,deferred-init keeps the kernel from initializing this device at boot. A test
+	 * initializes it with device_init(), after changing what the emulated part reports.
+	 */
+	thermo_broken: thermo@49 {
+		compatible = "qacademy,thermo";
+		reg = <0x49>;
+		zephyr,deferred-init;
+	};
+};

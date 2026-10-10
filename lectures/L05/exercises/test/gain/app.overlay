@@ -1,0 +1,24 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Three parts: two with a gain from the devicetree, and one that keeps the binding's default.
+ */
+
+&i2c0 {
+	light_x4: lumo@29 {
+		compatible = "qacademy,lumo";
+		reg = <0x29>;
+		gain = <4>;
+	};
+
+	light_x8: lumo@2a {
+		compatible = "qacademy,lumo";
+		reg = <0x2a>;
+		gain = <8>;
+	};
+
+	light_default: lumo@2b {
+		compatible = "qacademy,lumo";
+		reg = <0x2b>;
+	};
+};

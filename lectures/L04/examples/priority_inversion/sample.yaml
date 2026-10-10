@@ -1,0 +1,32 @@
+sample:
+  name: Priority inversion
+  description: Priority inversion with a semaphore, and priority inheritance with a mutex.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+  harness: console
+tests:
+  qacademy.l04.priority_inversion:
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "high   \\(priority 5\\) wants the semaphore"
+        - "medium \\(priority 6\\) starts computing, needs no lock"
+        - "medium \\(priority 6\\) is done"
+        - "low    \\(priority 7\\) gives the semaphore back"
+        - "high   \\(priority 5\\) has the semaphore"
+  qacademy.l04.priority_inversion.mutex:
+    extra_args:
+      - EXTRA_CONF_FILE=mutex.conf
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "high   \\(priority 5\\) wants the mutex"
+        - "low    \\(priority 5\\) gives the mutex back"
+        - "high   \\(priority 5\\) has the mutex"
+        - "medium \\(priority 6\\) starts computing, needs no lock"

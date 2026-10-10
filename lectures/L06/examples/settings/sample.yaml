@@ -1,0 +1,18 @@
+sample:
+  name: Settings
+  description: A boot counter kept by the settings subsystem on the simulated flash.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l06.settings:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        # Any count: a second Twister run in the same output directory finds the first run's flash.
+        - "<inf> app: Boot count: [0-9]+"

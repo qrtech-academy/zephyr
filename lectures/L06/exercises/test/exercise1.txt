@@ -1,0 +1,10 @@
+Thermostat ready
+Setpoint: 21 C
+Setpoint set to 25 C
+Setpoint: 25 C
+setpoint must be between 5 and 30 C, not 31
+-34
+not a temperature: 'warm'
+-22
+not a temperature: '25x'
+set: wrong parameter count

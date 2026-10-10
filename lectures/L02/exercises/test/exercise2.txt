@@ -1,0 +1,5 @@
+Button on pin 1, LED 1 on pin 2
+Press 1 at 110 ms, LED 1 on, pin high
+Press 2 at 380 ms, LED 1 off, pin low
+Press 3 at 650 ms, LED 1 on, pin high
+3 presses counted

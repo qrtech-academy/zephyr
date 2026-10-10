@@ -1,0 +1,13 @@
+2 alarms
+Overheat: critical at 70 C, hysteresis 2, LED pin 10
+Warm: warning at 45 C, hysteresis 5, LED pin 11
+Reading 20 C
+Reading 50 C
+  Warm (warning) on, pin 11 high
+Reading 42 C
+Reading 75 C
+  Overheat (critical) on, pin 10 high
+Reading 66 C
+  Overheat (critical) off, pin 10 low
+Reading 30 C
+  Warm (warning) off, pin 11 low

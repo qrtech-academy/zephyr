@@ -1,0 +1,32 @@
+# L01 test suite: one entry per exercise set. What each key means is in ci/suite.py, which does
+# the building and running; see README.md for what is tested.
+
+# Exercise Set 1: the first application and its uptime.
+exercise1:
+  needs: [exercise1/CMakeLists.txt, exercise1/prj.conf, exercise1/src/main.c]
+  programs:
+    - stop_at: 5
+      expected: exercise1.txt
+
+# Exercise Set 2: the temperature monitor's log, at the default level and with warnings only.
+exercise2:
+  needs: [exercise2/CMakeLists.txt, exercise2/prj.conf, exercise2/src/main.c]
+  programs:
+    - stop_at: 5
+      expected: exercise2.txt
+    - cmake: [-DCONFIG_LOG_DEFAULT_LEVEL=2]
+      stop_at: 5
+      expected: exercise2-warnings.txt
+
+# Exercise Set 3: the application's own Kconfig options, in both units, and the conversion.
+exercise3:
+  needs: [exercise3/Kconfig, exercise3/CMakeLists.txt, exercise3/prj.conf,
+          exercise3/fahrenheit.conf, exercise3/src/main.c, exercise3/src/convert.h,
+          exercise3/src/convert.c]
+  programs:
+    - stop_at: 1
+      expected: exercise3.txt
+    - cmake: [-DEXTRA_CONF_FILE=fahrenheit.conf]
+      stop_at: 1
+      expected: exercise3-fahrenheit.txt
+  ztest: convert

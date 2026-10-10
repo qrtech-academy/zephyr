@@ -1,0 +1,26 @@
+sample:
+  name: Sockets
+  description: A TCP echo server, reachable from the host through native_sim's offloaded sockets.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+tests:
+  # The server on its own waits for a client from the host forever, so it is only built.
+  qacademy.l06.sockets:
+    build_only: true
+  # With the self-test, a client thread in the same program checks the echo.
+  qacademy.l06.sockets.self_test:
+    extra_args:
+      - EXTRA_CONF_FILE=self_test.conf
+    extra_configs:
+      - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> app: Listening on TCP port 4242"
+        - "<inf> app: Client connected"
+        - "<inf> app: Echoed 19 bytes"
+        - "<inf> self_test: Self-test passed: the server echoed \"Hello, echo server!\""

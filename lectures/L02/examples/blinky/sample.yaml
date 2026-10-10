@@ -1,0 +1,20 @@
+sample:
+  name: Blinky
+  description: Blink the devicetree's led0 and read it back from the emulated GPIO controller.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l02.blinky:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "<inf> blinky: LED is pin 0 on gpio_emul"
+        - "<inf> blinky: LED on"
+        - "<inf> blinky: LED off"
+        - "<inf> blinky: LED on"

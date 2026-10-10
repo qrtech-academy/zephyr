@@ -1,0 +1,14 @@
+gauge: 80 %
+  led: green
+  display: 80 %
+gauge: 15 %
+  led: red
+  display: 15 %
+gauge: 150 %
+gauge: rejected
+gauge: 15 %, charging
+  led: green
+  display: 15 %, charging
+gauge: 60 %, charging
+  led: green
+  display: 60 %, charging

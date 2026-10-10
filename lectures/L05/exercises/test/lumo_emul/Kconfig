@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+
+config EMUL_LUMO
+	bool "Emulator for the Lumo ambient light sensor"
+	default y
+	depends on I2C_EMUL
+	depends on DT_HAS_QACADEMY_LUMO_ENABLED
+	help
+	  Plays the part of a Lumo chip for every "qacademy,lumo" node on an
+	  emulated I2C bus. DT_HAS_QACADEMY_LUMO_ENABLED only exists once a
+	  binding for "qacademy,lumo" does, so the emulator is only built
+	  together with your binding.
+
+config EMUL_LUMO_DAYLIGHT
+	bool "Simulate a sunrise around every emulated Lumo part"
+	depends on EMUL_LUMO
+	help
+	  Starts a thread that sets the light level of every emulated part
+	  half a second before each whole second of uptime, for the first
+	  seven seconds. Exercise Set 4's application is run with it.

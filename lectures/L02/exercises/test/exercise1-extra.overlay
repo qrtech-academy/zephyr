@@ -1,0 +1,25 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Merged on top of Exercise Set 1's app.overlay by the test suite: led0 becomes a different LED,
+ * active low, and the LED blinks differently. A program that takes all of it from the devicetree
+ * follows without a change.
+ */
+
+&leds {
+	red_led: led_5 {
+		gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
+		label = "Red LED";
+	};
+};
+
+/ {
+	aliases {
+		led0 = &red_led;
+	};
+
+	zephyr,user {
+		blink-ms = <50 150>;
+		blinks = <2>;
+	};
+};

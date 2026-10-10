@@ -1,0 +1,12 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * One part, at the reset gain.
+ */
+
+&i2c0 {
+	light: lumo@29 {
+		compatible = "qacademy,lumo";
+		reg = <0x29>;
+	};
+};

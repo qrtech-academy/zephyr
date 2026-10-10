@@ -1,0 +1,24 @@
+sample:
+  name: Busy loop
+  description: Waiting for a timer interrupt by blocking, and by spinning, which stalls native_sim.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+  extra_configs:
+    - CONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+tests:
+  qacademy.l03.busy_loop:
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "0 ms: timer started, waiting for it to expire"
+        - "blocking on a semaphore"
+        - "500 ms: timer expired"
+  # The busy-loop variant never finishes on native_sim, so it is only built, never run.
+  qacademy.l03.busy_loop.spinning:
+    build_only: true
+    extra_args:
+      - EXTRA_CONF_FILE=busy.conf

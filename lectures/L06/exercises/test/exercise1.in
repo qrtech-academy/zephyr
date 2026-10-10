@@ -1,0 +1,9 @@
+setpoint get
+setpoint set 25
+setpoint get
+setpoint set 31
+retval
+setpoint set warm
+retval
+setpoint set 25x
+setpoint set

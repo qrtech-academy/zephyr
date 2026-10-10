@@ -1,0 +1,26 @@
+sample:
+  name: Shell
+  description: Shell commands of your own, with subcommands and arguments.
+common:
+  platform_allow: native_sim/native/64
+  integration_platforms:
+    - native_sim/native/64
+tests:
+  # Twister's shell harness starts the program, types each command into its stdin, and looks for
+  # a line of the response matching the expected regular expression.
+  qacademy.l06.shell:
+    harness: shell
+    harness_config:
+      shell_commands:
+        - command: "greet Ada 2"
+          expected: "Hello, Ada!"
+        - command: "led on"
+          expected: "LED on"
+        - command: "led status"
+          expected: "LED is on"
+        - command: "led off"
+          expected: "LED off"
+        - command: "led status"
+          expected: "LED is off"
+        - command: "kernel uptime"
+          expected: "Uptime: [0-9]+ ms"
