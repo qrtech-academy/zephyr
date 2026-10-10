@@ -1,0 +1,24 @@
+# The west manifest: the one place that says which Zephyr the course is built against.
+#
+# `make setup` makes the repository itself the west workspace, so Zephyr lands in deps/zephyr
+# rather than beside the repository. Zephyr's own manifest is deliberately not imported: it lists
+# about eighty HALs and libraries, none of which native_sim needs, and together they are several
+# gigabytes. A module the course does come to need is imported by name, e.g.
+#
+#   import:
+#     name-allowlist: [littlefs]
+manifest:
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: v4.4.2
+      path: deps/zephyr
+      clone-depth: 1
+      west-commands: scripts/west-commands.yml
+
+  self:
+    path: .
