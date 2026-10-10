@@ -1,0 +1,46 @@
+# Ignore everything without an extension, then selectively allow files and directories.
+*
+!*.*
+!*/
+
+# Don't ignore makefiles, license files and Kconfig files.
+!makefile
+!Makefile
+!LICENSE
+!LICENSE-CONTENT
+!Kconfig
+
+# Ignore the west workspace that `make setup` creates inside the repository: its configuration,
+# Zephyr and its modules, and the Python environment west and Twister run in. None of it is course
+# material, and all of it is gigabytes.
+.west/
+deps/
+.venv/
+
+# Ignore build output: west's default build directory, the test runner's, and Twister's.
+build/
+build-*/
+twister-out*/
+.pytest_cache/
+*.pyc
+__pycache__/
+
+# Ignore files that native_sim programs write next to themselves, such as the simulated flash.
+*.bin
+
+# Ignore IDE and editor directories.
+.vscode/
+.vs/
+.idea/
+
+# Ignore metadata that Windows (through WSL) and macOS leave beside copied files.
+*:Zone.Identifier
+.DS_Store
+
+# Ignore your own exercise solutions, keeping each lecture's workspace README and test suite.
+# Your work sits in lectures/LNN/exercises/, where `make test` finds it; ignoring it keeps
+# `git status` quiet and a `git pull` of new course material clear of it. `git add -f` overrides
+# this for a file you do want to commit.
+lectures/*/exercises/*
+!lectures/*/exercises/README.md
+!lectures/*/exercises/test/
