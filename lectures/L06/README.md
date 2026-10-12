@@ -80,9 +80,32 @@ Participants should be able to explain:
 
 ---
 
-## Next Lecture
-* The Zephyr course is now complete.
-* Moving the same code onto a board, flashing it, and testing it there, is the business of
-  **Bootloaders and the Boot Path** and **Hardware-in-the-Loop Testing**.
+## Where to Go From Here
+The course is complete. Everything in it was built for `native_sim`, and every program in it builds
+for a real board as it stands.
+
+**Try it on hardware.** Any board Zephyr supports will do; two cheap ones its tree already knows are
+an **STM32 Nucleo** (`-b nucleo_f401re`) and an **ESP32 DevKitC**
+(`-b esp32_devkitc/esp32/procpu`). Three things change in the workspace:
+* **A cross-compiler.** `west sdk install` fetches the Zephyr SDK, which the host compiler stood in
+  for until now.
+* **The vendor's HAL.** `native_sim` needed no Zephyr modules, so [`west.yml`](../../west.yml)
+  imports none; a real SoC needs its own, such as `hal_stm32` or `hal_espressif`. Add an `import`
+  with the modules the board needs and run `west update`.
+* **Flashing and debugging.** `west flash` and `west debug` replace `west build -t run`: over the
+  Nucleo's on-board ST-LINK, or over the DevKitC's USB port.
+
+**What changes on a board**: pins and clocks have to be configured (`pinctrl`), the console is a
+real UART, logging is deferred rather than immediate, interrupts arrive while your code runs, stack
+overflows can be caught in hardware, and timing is real rather than simulated, so a busy loop wastes
+power instead of stopping the world.
+
+**What does not change**: the kernel API, devicetree and Kconfig, the driver model, and your tests.
+Twister runs the same ztest suites on the board itself with `--device-testing`, which is the point
+of having written them against an emulator.
+
+**Further reading.** Zephyr's documentation lists every supported board, and its `samples/`
+directory is the best catalogue of subsystems this course did not cover: Bluetooth, USB, file
+systems, power management and the rest.
 
 ---

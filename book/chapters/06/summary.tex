@@ -37,9 +37,25 @@ You should be able to explain:
 \end{enumerate}
 
 \needspace{6\baselineskip}
-\subsection*{Looking ahead}
+\subsection*{Where to go from here}
 This is the last chapter: you have built, configured, described, scheduled, driven, tested and
-debugged a Zephyr application, and every one of those programs runs on a board as it stands. What is
-left is the board itself. Moving the same code onto one, flashing it, and testing it there, is the
-business of two other courses in this track, \emph{Bootloaders and the Boot Path} and
-\emph{Hardware-in-the-Loop Testing}.
+debugged a Zephyr application, and every one of those programs builds for a real board as it stands.
+What is left is the board itself.
+
+\textbf{Try it on hardware.} Any board Zephyr supports will do; two cheap ones its tree already
+knows are an STM32 Nucleo (\code{-b nucleo_f401re}) and an ESP32 DevKitC
+(\code{-b esp32_devkitc/esp32/procpu}). Three things change in the workspace. You need a
+cross-compiler, which \code{west sdk install} fetches, where the host's own GCC has stood in until
+now. You need the vendor's HAL: \code{native_sim} needed no Zephyr modules, so the course's
+\file{west.yml} imports none, and a real SoC needs its own, such as \code{hal_stm32} or
+\code{hal_espressif}. And you flash rather than run: \code{west flash} and \code{west debug}
+replace \code{west build -t run}, over the Nucleo's on-board ST-LINK or the DevKitC's USB port.
+
+\textbf{What changes on a board} is the part the simulator was never pretending to be: pins and
+clocks have to be configured, the console is a real UART, logging is deferred rather than immediate,
+interrupts arrive while your code is running, stack overflows can be caught in hardware, and timing
+is real, so a busy loop merely wastes power instead of stopping the world.
+
+\textbf{What does not change} is nearly everything this book is about: the kernel API, devicetree
+and Kconfig, the driver model, and your tests, which Twister runs on the board itself with
+\code{--device-testing}. That is the point of having written them against an emulator.
